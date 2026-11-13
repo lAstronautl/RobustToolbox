@@ -45,6 +45,10 @@ namespace Robust.Server
         {
             SharedIoC.RegisterIoC(deps);
 
+            // StarHorizon: server-only parallel manager whose caller takes part in parallel jobs.
+            deps.Register<Robust.Shared.Threading.IParallelManager, Robust.Server.Threading.ServerParallelManager>(overwrite: true);
+            deps.Register<Robust.Shared.Threading.IParallelManagerInternal, Robust.Server.Threading.ServerParallelManager>(overwrite: true);
+
             deps.Register<IBaseServer, BaseServer>();
             deps.Register<IBaseServerInternal, BaseServer>();
             deps.Register<BaseServer, BaseServer>();
