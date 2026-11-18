@@ -29,6 +29,11 @@ namespace Robust.Client.Input
             return _mouseKeyMap[button];
         }
 
+        public static bool TryMouseButtonToKey(Button button, out Keyboard.Key key)
+        {
+            return _mouseKeyMap.TryGetValue(button, out key);
+        }
+
         private static readonly FrozenDictionary<Button, Keyboard.Key> _mouseKeyMap = new Dictionary<Button, Keyboard.Key>()
         {
             {Button.Left, Keyboard.Key.MouseLeft},

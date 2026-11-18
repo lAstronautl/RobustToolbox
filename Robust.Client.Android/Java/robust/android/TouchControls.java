@@ -213,7 +213,7 @@ final class TouchControls extends FrameLayout {
                 // Second finger: two-finger drag scrolls.
                 cancelPendingLongPress();
                 if (dragging) {
-                    mouse(BUTTON_PRIMARY, ACTION_UP, e.getX(0), e.getY(0));
+                    mouse(0, ACTION_UP, e.getX(0), e.getY(0));
                     dragging = false;
                 }
                 scrolling = true;
@@ -250,7 +250,7 @@ final class TouchControls extends FrameLayout {
                 if (scrolling) {
                     // nothing
                 } else if (dragging) {
-                    mouse(BUTTON_PRIMARY, ACTION_UP, x, y);
+                    mouse(0, ACTION_UP, x, y);
                 } else if (!longPressFired) {
                     click(rightClickMode ? BUTTON_SECONDARY : BUTTON_PRIMARY, x, y);
                     if (rightClickMode && rmbToggle != null)
@@ -264,7 +264,7 @@ final class TouchControls extends FrameLayout {
             case MotionEvent.ACTION_CANCEL: {
                 cancelPendingLongPress();
                 if (dragging)
-                    mouse(BUTTON_PRIMARY, ACTION_UP, e.getX(), e.getY());
+                    mouse(0, ACTION_UP, e.getX(), e.getY());
                 pointerId = -1;
                 dragging = false;
                 scrolling = false;
@@ -290,9 +290,13 @@ final class TouchControls extends FrameLayout {
     private static void click(int button, float x, float y) {
         mouse(0, ACTION_MOVE, x, y);
         mouse(button, ACTION_DOWN, x, y);
-        mouse(button, ACTION_UP, x, y);
+        mouse(0, ACTION_UP, x, y);
     }
 
+    /**
+     * SDL's Android_OnMouse takes the mouse *button state* (like MotionEvent.getButtonState):
+     * on DOWN the buttons now held, on UP the buttons still held after the release (0 here).
+     */
     private static void mouse(int button, int action, float x, float y) {
         SDLActivity.onNativeMouse(button, action, x, y, false);
     }

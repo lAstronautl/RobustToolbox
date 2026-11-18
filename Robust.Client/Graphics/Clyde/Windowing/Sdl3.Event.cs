@@ -162,7 +162,9 @@ internal partial class Clyde
                 return;
 
             var button = ConvertSdl3Button(ev.Button);
-            var key = Mouse.MouseButtonToKey(button);
+            // Touch/emulated input can produce SDL button 0, which maps to nothing.
+            if (!Mouse.TryMouseButtonToKey(button, out var key))
+                return;
             EmitKeyEvent(key, ev.Type, false, ev.Mods, 0, 0);
         }
 
