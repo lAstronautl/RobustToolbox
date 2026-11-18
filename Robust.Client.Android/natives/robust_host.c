@@ -12,9 +12,12 @@
 //   [4] crash file
 //   [5] app native library dir (SDL3, OpenAL, ... from the APK)
 //   [6] runtime config properties, "key=value\n..." (from the engine's runtimeconfig.json)
+//   [7] log file (optional): everything logged by the host and the engine, shown by the launcher
 
+#include <stdarg.h>
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <sys/system_properties.h>
 #else
 // Desktop build for testing the host logic with the Linux Mono runtime (see ROBUST_HOST_TEST below).
 #include <stdarg.h>
@@ -46,8 +49,43 @@ static int __android_log_write(int prio, const char *tag, const char *text)
 #include <unistd.h>
 
 #define TAG "RobustHost"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define LOGI(...) host_log(ANDROID_LOG_INFO, __VA_ARGS__)
+#define LOGE(...) host_log(ANDROID_LOG_ERROR, __VA_ARGS__)
+
+// ---- log file (so the launcher can show what happened without adb) ----
+
+#define LOG_FILE_MAX (2 * 1024 * 1024)
+static FILE *g_logfile;
+static long g_logsize;
+static pthread_mutex_t g_logmutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void logfile_write(const char *line)
+{
+    if (!g_logfile)
+        return;
+    pthread_mutex_lock(&g_logmutex);
+    if (g_logsize < LOG_FILE_MAX)
+    {
+        g_logsize += fprintf(g_logfile, "%s\n", line);
+        if (g_logsize >= LOG_FILE_MAX)
+            fputs("[log truncated]\n", g_logfile);
+        fflush(g_logfile);
+    }
+    pthread_mutex_unlock(&g_logmutex);
+}
+
+static void host_log(int prio, const char *fmt, ...)
+{
+    char buf[2048];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    __android_log_write(prio, TAG, buf);
+    char line[2100];
+    snprintf(line, sizeof(line), "[host] %s", buf);
+    logfile_write(line);
+}
 
 typedef void MonoDomain;
 typedef void MonoAssembly;
@@ -81,6 +119,7 @@ static void *log_thread(void *arg)
         {
             *nl = 0;
             __android_log_write(ANDROID_LOG_INFO, "RobustGame", start);
+            logfile_write(start);
             start = nl + 1;
         }
         len = strlen(start);
@@ -89,6 +128,7 @@ static void *log_thread(void *arg)
         {
             buf[len] = 0;
             __android_log_write(ANDROID_LOG_INFO, "RobustGame", buf);
+            logfile_write(buf);
             len = 0;
         }
     }
@@ -199,7 +239,23 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     const char *app_native_dir = argv[5];
     const char *config = argv[6];
 
+    if (argc >= 8 && argv[7][0])
+        g_logfile = fopen(argv[7], "w");
+
+#ifdef __ANDROID__
+    char model[PROP_VALUE_MAX] = "", release[PROP_VALUE_MAX] = "", abi[PROP_VALUE_MAX] = "";
+    __system_property_get("ro.product.model", model);
+    __system_property_get("ro.build.version.release", release);
+    __system_property_get("ro.product.cpu.abi", abi);
+    LOGI("Device: %s, Android %s, %s", model, release, abi);
+#endif
+
+    // SDL reads hints from the environment and SDL_Init has not run yet.
+    // Without this SDL picks the orientation from the window size and overrides the manifest.
+    setenv("SDL_ORIENTATIONS", "LandscapeLeft LandscapeRight", 1);
+
     LOGI("Runtime: %s", runtime_dir);
+    LOGI("Host: %s", host_dll);
     char *native_dir = join_path(runtime_dir, "native");
     char *lib_dir = join_path(runtime_dir, "lib");
 

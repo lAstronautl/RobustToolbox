@@ -529,6 +529,8 @@ public sealed class MainActivity : Activity
         };
         col.AddView(hubUrl, Ui.Fill(0, 6, this));
 
+        col.AddView(Ui.Button(this, "Лог последней игры", ShowGameLog), Ui.Fill(0, 24, this));
+
         col.AddView(Ui.Button(this, "Очистить кэш (движки, среды .NET, контент)", () =>
         {
             try
@@ -652,6 +654,55 @@ public sealed class MainActivity : Activity
     }
 
     private string CrashFile => System.IO.Path.Combine(FilesPath, "last-crash.txt");
+    private string GameLogFile => System.IO.Path.Combine(FilesPath, "last-game.log");
+
+    private void ShowGameLog()
+    {
+        if (!File.Exists(GameLogFile))
+        {
+            Toast.MakeText(this, "Лога ещё нет: игра не запускалась.", ToastLength.Short)!.Show();
+            return;
+        }
+
+        string text;
+        try
+        {
+            using var fs = new FileStream(GameLogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs);
+            var lines = reader.ReadToEnd().Split('\n');
+            text = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - 300)));
+        }
+        catch (Exception e)
+        {
+            text = e.Message;
+        }
+
+        var view = Ui.Label(this, text, 11);
+        view.SetTextIsSelectable(true);
+        view.SetPadding(Ui.Dp(this, 16), Ui.Dp(this, 8), Ui.Dp(this, 16), Ui.Dp(this, 8));
+        var scroll = new ScrollView(this);
+        scroll.AddView(view);
+        scroll.Post(() => scroll.FullScroll(FocusSearchDirection.Down));
+
+        new AlertDialog.Builder(this)
+            .SetTitle("Лог последней игры")!
+            .SetView(scroll)!
+            .SetPositiveButton("Закрыть", (_, _) => { })!
+            .SetNeutralButton("Копировать", (_, _) =>
+            {
+                var cm = (ClipboardManager)GetSystemService(ClipboardService)!;
+                cm.PrimaryClip = ClipData.NewPlainText("game log", text);
+                Toast.MakeText(this, "Скопировано", ToastLength.Short)!.Show();
+            })!
+            .SetNegativeButton("Поделиться", (_, _) =>
+            {
+                var send = new Intent(Intent.ActionSend);
+                send.SetType("text/plain");
+                send.PutExtra(Intent.ExtraText, text);
+                StartActivity(Intent.CreateChooser(send, "Отправить лог"));
+            })!
+            .Show();
+    }
 
     /// <summary>Extracts the game host assembly from the APK (cheap, done on every launch so updates apply).</summary>
     private string ExtractGameHost()
@@ -697,6 +748,7 @@ public sealed class MainActivity : Activity
                 var cm = (ClipboardManager)GetSystemService(ClipboardService)!;
                 cm.PrimaryClip = ClipData.NewPlainText("crash", text);
             })!
+            .SetNegativeButton("Лог игры", (_, _) => ShowGameLog())!
             .Show();
     }
 }

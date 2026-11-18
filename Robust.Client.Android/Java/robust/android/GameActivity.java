@@ -11,10 +11,18 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import org.libsdl.app.SDLActivity;
 
 import java.io.File;
+import java.io.RandomAccessFile;
 
 /**
  * Hosts the engine in its own process (":game"). Deliberately plain Java: this process must not start the
@@ -32,6 +40,10 @@ public class GameActivity extends SDLActivity {
     public static final String EXTRA_TOUCH_SCALE = "touch_scale";
 
     private static final String TAG = "RobustGame";
+
+    private TextView status;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean engineStarted;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +69,19 @@ public class GameActivity extends SDLActivity {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
 
+        // Loading status over the (still black) SDL surface, from the game log.
+        if (mLayout != null) {
+            status = new TextView(this);
+            status.setTextColor(Color.argb(220, 232, 238, 246));
+            status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            status.setGravity(Gravity.CENTER);
+            status.setPadding(48, 0, 48, 0);
+            status.setText("Загрузка движка…");
+            mLayout.addView(status, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            handler.postDelayed(this::pollLog, 700);
+        }
+
         if (intent.getBooleanExtra(EXTRA_TOUCH, true) && mLayout != null) {
             TouchControls overlay = new TouchControls(this,
                     intent.getIntExtra(EXTRA_TOUCH_OPACITY, 60),
@@ -81,7 +106,50 @@ public class GameActivity extends SDLActivity {
                 nonNull(intent.getStringExtra(EXTRA_CRASH)),
                 getApplicationInfo().nativeLibraryDir,
                 nonNull(intent.getStringExtra(EXTRA_RUNTIME_CONFIG)),
+                logFile().getAbsolutePath(),
         };
+    }
+
+    private File logFile() {
+        return new File(getFilesDir(), "last-game.log");
+    }
+
+    /** Shows the newest log line until the engine reaches its first run level, and again on fatal errors. */
+    private void pollLog() {
+        String tail = readTail(logFile(), 4096);
+        if (tail != null && status != null) {
+            if (tail.contains("Runlevel changed"))
+                engineStarted = true;
+            boolean fatal = tail.contains("[FATL]") || tail.contains("Fatal:");
+            String[] lines = tail.trim().split("\n");
+            String last = lines.length > 0 ? lines[lines.length - 1] : "";
+            if (last.length() > 160)
+                last = last.substring(0, 160) + "…";
+            if (fatal) {
+                status.setVisibility(View.VISIBLE);
+                status.setText("Ошибка движка. Подробности: лаунчер → Настройки → Лог последней игры.\n\n" + last);
+            } else if (engineStarted) {
+                status.setVisibility(View.GONE);
+            } else {
+                status.setText("Загрузка движка…\n\n" + last);
+            }
+        }
+        handler.postDelayed(this::pollLog, 700);
+    }
+
+    private static String readTail(File f, int max) {
+        if (!f.exists())
+            return null;
+        try (RandomAccessFile raf = new RandomAccessFile(f, "r")) {
+            long len = raf.length();
+            long start = Math.max(0, len - max);
+            byte[] buf = new byte[(int) (len - start)];
+            raf.seek(start);
+            raf.readFully(buf);
+            return new String(buf, "UTF-8");
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String nonNull(String s) {
