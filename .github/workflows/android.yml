@@ -1,0 +1,86 @@
+name: Android
+
+# Builds the Android launcher APK and the Android engine package.
+# Run manually with "publish" to create the release the launcher downloads the engine from:
+#   android-engine-v<engine version>/Robust.Client_android.zip (+ .sha256)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish engine + APK as release android-engine-v<version>"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "Robust.Client.Android/**"
+      - "Robust.Launcher.Core/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Android workload and SDK packages
+        run: |
+          dotnet workload install android
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+
+      - name: Cache native libraries
+        id: natives-cache
+        uses: actions/cache@v4
+        with:
+          path: Robust.Client.Android/natives/out
+          key: android-natives-${{ hashFiles('Robust.Client.Android/natives/build-natives.sh', 'Robust.Client.Android/natives/main_shim.c') }}
+
+      - name: Build native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" Robust.Client.Android/natives/build-natives.sh
+
+      - name: Package engine
+        run: Robust.Client.Android/engine/package-engine.sh release
+
+      - name: Build APK
+        run: |
+          dotnet publish Robust.Client.Android/Robust.Client.Android.csproj -c Release \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" -o apk-out
+          cp apk-out/*-Signed.apk release/RobustAndroidLauncher.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: release/
+
+      - name: Publish release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(cat release/engine-version.txt)
+          TAG="android-engine-v$VERSION"
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "Android engine $VERSION" --notes "Android build of the engine $VERSION and the launcher APK."
+          gh release upload "$TAG" --clobber \
+            release/Robust.Client_android.zip release/Robust.Client_android.zip.sha256 release/RobustAndroidLauncher.apk

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Robust.Client.Graphics.FontManagement;
 using Robust.Shared;
@@ -68,6 +68,10 @@ internal sealed partial class SystemFontManager : ISystemFontManagerInternal, IP
     private ISystemFontManagerInternal GetImplementation()
     {
         if (!_cfg.GetCVar(CVars.FontSystem))
+            return new SystemFontManagerFallback();
+
+        // The engine package is built on Linux, but Android has no fontconfig.
+        if (OperatingSystem.IsAndroid())
             return new SystemFontManagerFallback();
 
 #if WINDOWS

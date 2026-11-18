@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LauncherTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#1B2A41</item>
+        <item name="android:colorAccent">#4FC3F7</item>
+        <item name="android:windowBackground">#11161F</item>
+        <item name="android:statusBarColor">#11161F</item>
+    </style>
+    <style name="GameTheme" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#000000</item>
+    </style>
+</resources>

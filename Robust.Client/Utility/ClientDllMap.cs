@@ -27,6 +27,8 @@ namespace Robust.Client.Utility
 #if MACOS
             OpenALLibraryNameContainer.OverridePath = "libopenal.1.dylib";
 #endif
+            if (OperatingSystem.IsAndroid())
+                OpenALLibraryNameContainer.OverridePath = "libopenal.so";
         }
     }
 }

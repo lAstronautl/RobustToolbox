@@ -33,7 +33,7 @@ namespace Robust.Shared
                 }
 
                 string? rName = null;
-                if (OperatingSystem.IsLinux()) rName = linuxName;
+                if (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) rName = linuxName;
                 if (OperatingSystem.IsMacOS()) rName = macName;
 
                 if ((rName != null) && NativeLibrary.TryLoad(rName, assembly, path, out var handle))

@@ -129,6 +129,14 @@ namespace Robust.Client.Graphics.Clyde
             // macOS cannot.
             if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
                 _cfg.OverrideDefault(CVars.DisplayThreadWindowApi, true);
+
+            if (OperatingSystem.IsAndroid())
+            {
+                // Android only has OpenGL ES, and SDL already runs the game on its own thread.
+                _cfg.OverrideDefault(CVars.DisplayCompat, true);
+                _cfg.OverrideDefault(CVars.DisplayThreadWindowApi, false);
+                _cfg.OverrideDefault(CVars.DisplayWindowingApi, "sdl3");
+            }
 #if MACOS
             // Trust macOS to not need threaded window blitting.
             // (threaded window blitting is a workaround to avoid having to frequently MakeCurrent() on Windows, as it is broken).

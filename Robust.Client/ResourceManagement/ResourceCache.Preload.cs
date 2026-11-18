@@ -282,14 +282,10 @@ namespace Robust.Client.ResourceManagement
             // The array must be sorted from biggest to smallest first.
             atlasList.Sort((b, a) => rsiList[a].AtlasSheet.Height.CompareTo(rsiList[b].AtlasSheet.Height));
 
-            #if FULL_RELEASE
-            var maxSize = Math.Min(GL.GetInteger(GetPName.MaxTextureSize), _configurationManager.GetCVar(CVars.ResRSIAtlasSize));
-            #else
-            // For tests
+            // Headless clients (tests, launcher smoke tests) have no GL context to query.
             var maxSize = 12288;
             if (_clyde is not ClydeHeadless)
                 maxSize = Math.Min(GL.GetInteger(GetPName.MaxTextureSize), _configurationManager.GetCVar(CVars.ResRSIAtlasSize));
-            #endif
 
             // THIS IS NOT GUARANTEED TO HAVE ANY PARTICULARLY LOGICAL ORDERING.
             // E.G you could have atlas 1 RSIs appear *before* you're done seeing atlas 2 RSIs.

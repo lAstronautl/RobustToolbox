@@ -68,6 +68,12 @@ public static class ZStd
                 if (NativeLibrary.TryLoad("libzstd.so", assembly, path, out handle))
                     return handle;
             }
+            else if (OperatingSystem.IsAndroid())
+            {
+                // Shipped in the APK's native library dir.
+                if (NativeLibrary.TryLoad("libzstd.so", assembly, path, out var handle))
+                    return handle;
+            }
             else if (OperatingSystem.IsMacOS())
             {
                 if (NativeLibrary.TryLoad("libzstd.1.dylib", assembly, path, out var handle))

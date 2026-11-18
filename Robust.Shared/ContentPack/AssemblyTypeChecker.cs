@@ -61,9 +61,25 @@ namespace Robust.Shared.ContentPack
 
         internal Resolver CreateResolver()
         {
-            var dotnetDir = Path.GetDirectoryName(typeof(int).Assembly.Location)!;
             var ourPath = typeof(AssemblyTypeChecker).Assembly.Location;
-            var loadDirs = new List<string> { dotnetDir };
+            var loadDirs = new List<string>();
+
+            var coreLibPath = typeof(int).Assembly.Location;
+            if (!string.IsNullOrEmpty(coreLibPath))
+            {
+                loadDirs.Add(Path.GetDirectoryName(coreLibPath)!);
+            }
+            else if (Environment.GetEnvironmentVariable("ROBUST_FRAMEWORK_DIR") is { Length: > 0 } frameworkDir)
+            {
+                // Android: framework assemblies live inside the APK and have no file path,
+                // so the launcher ships a copy of them for the sandbox verifier.
+                _sawmill.Debug("Using framework directory from ROBUST_FRAMEWORK_DIR: {Dir}", frameworkDir);
+                loadDirs.Add(frameworkDir);
+            }
+            else
+            {
+                _sawmill.Warning(".NET framework directory not available, sandbox verification will fail");
+            }
 
             if (string.IsNullOrEmpty(ourPath))
             {

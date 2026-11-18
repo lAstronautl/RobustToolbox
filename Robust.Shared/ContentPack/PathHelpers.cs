@@ -18,6 +18,12 @@ namespace Robust.Shared.ContentPack
             // Fallback in case the above doesn't work ig?
             var assembly = typeof(PathHelpers).Assembly;
             var location = assembly.Location;
+            if (location == string.Empty && OperatingSystem.IsAndroid())
+            {
+                // On Android assemblies may be bundled inside the APK and have no file location.
+                return AppContext.BaseDirectory;
+            }
+
             if (location == string.Empty)
             {
                 // See https://docs.microsoft.com/en-us/dotnet/api/system.reflection.assembly.location?view=net-5.0#remarks

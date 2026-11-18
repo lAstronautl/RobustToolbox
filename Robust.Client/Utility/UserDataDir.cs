@@ -19,6 +19,13 @@ namespace Robust.Client.Utility
         {
             string appDataDir;
 
+            if (OperatingSystem.IsAndroid())
+            {
+                // App-private files directory (Context.FilesDir).
+                appDataDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                return Path.Combine(appDataDir, gameController.Options.UserDataDirectoryName);
+            }
+
 #if LINUX
             var xdgDataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
             if (xdgDataHome == null)
