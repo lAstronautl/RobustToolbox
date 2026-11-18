@@ -249,6 +249,8 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     __system_property_get("ro.product.cpu.abi", abi);
     LOGI("Device: %s, Android %s, %s", model, release, abi);
 #endif
+    // The launcher uses this to pick this run's lines out of logcat.
+    LOGI("PID: %d", (int)getpid());
 
     // SDL reads hints from the environment and SDL_Init has not run yet.
     // Without this SDL picks the orientation from the window size and overrides the manifest.

@@ -675,29 +675,43 @@ public sealed class MainActivity : Activity
 
     private void ShowLogDialog(string text)
     {
-        var view = Ui.Label(this, text, 11);
+        // The summary comes first; it is what to send if only a short message fits.
+        var cut = text.IndexOf("=== host log ===", StringComparison.Ordinal);
+        var summary = cut > 0 ? text[..cut].TrimEnd() : text;
+
+        var shown = text.Split('\n');
+        var view = Ui.Label(this, string.Join("\n", shown.Take(500)) + (shown.Length > 500 ? "\n… (полный лог — «Отправить файлом»)" : ""), 11);
         view.SetTextIsSelectable(true);
         view.SetPadding(Ui.Dp(this, 16), Ui.Dp(this, 8), Ui.Dp(this, 16), Ui.Dp(this, 8));
         var scroll = new ScrollView(this);
         scroll.AddView(view);
-        scroll.Post(() => scroll.FullScroll(FocusSearchDirection.Down));
 
         new AlertDialog.Builder(this)
             .SetTitle("Лог последней игры")!
             .SetView(scroll)!
             .SetPositiveButton("Закрыть", (_, _) => { })!
-            .SetNeutralButton("Копировать", (_, _) =>
+            .SetNeutralButton("Копировать итог", (_, _) =>
             {
                 var cm = (ClipboardManager)GetSystemService(ClipboardService)!;
-                cm.PrimaryClip = ClipData.NewPlainText("game log", text);
-                Toast.MakeText(this, "Скопировано", ToastLength.Short)!.Show();
+                cm.PrimaryClip = ClipData.NewPlainText("game log", summary);
+                Toast.MakeText(this, "Итог скопирован", ToastLength.Short)!.Show();
             })!
-            .SetNegativeButton("Поделиться", (_, _) =>
+            .SetNegativeButton("Отправить файлом", (_, _) =>
             {
-                var send = new Intent(Intent.ActionSend);
-                send.SetType("text/plain");
-                send.PutExtra(Intent.ExtraText, text);
-                StartActivity(Intent.CreateChooser(send, "Отправить лог"));
+                try
+                {
+                    var uri = GameLogCollector.ExportForSharing(this, text);
+                    var send = new Intent(Intent.ActionSend);
+                    send.SetType("text/plain");
+                    send.PutExtra(Intent.ExtraStream, uri);
+                    send.PutExtra(Intent.ExtraSubject, "game-log.txt");
+                    send.AddFlags(ActivityFlags.GrantReadUriPermission);
+                    StartActivity(Intent.CreateChooser(send, "Отправить лог"));
+                }
+                catch (Exception e)
+                {
+                    Toast.MakeText(this, e.Message, ToastLength.Long)!.Show();
+                }
             })!
             .Show();
     }
