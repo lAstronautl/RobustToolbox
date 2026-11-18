@@ -51,7 +51,8 @@ namespace Robust.Shared.Log
 
         static ConsoleLogHandler()
         {
-            WriteAnsiColors = !System.Console.IsOutputRedirected;
+            // On Android the console is logcat, which shows ANSI color codes as garbage.
+            WriteAnsiColors = !System.Console.IsOutputRedirected && !OperatingSystem.IsAndroid();
 
             if (WriteAnsiColors && OperatingSystem.IsWindows())
             {

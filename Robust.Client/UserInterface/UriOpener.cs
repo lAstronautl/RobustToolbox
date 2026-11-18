@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Robust.Shared.Log;
 
 namespace Robust.Client.UserInterface
 {
@@ -70,6 +71,14 @@ namespace Robust.Client.UserInterface
     {
         protected override void DoOpen(Uri uri)
         {
+            // There is no shell to launch on Android; SDL opens the URL through an Intent instead.
+            if (OperatingSystem.IsAndroid())
+            {
+                if (!SDL3.SDL.SDL_OpenURL(uri.ToString()))
+                    Logger.GetSawmill("uri").Error($"Failed to open {uri}: {SDL3.SDL.SDL_GetError()}");
+                return;
+            }
+
             Process.Start(new ProcessStartInfo(uri.ToString()) {UseShellExecute = true});
         }
     }

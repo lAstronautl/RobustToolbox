@@ -72,12 +72,40 @@ public sealed class RuntimeManager
 
     public string GetInstallDir(int major) => Path.Combine(_root, $"net{major}-{AndroidRid}");
 
+    /// <summary>
+    /// Native libraries are mapped executable by the game process. Android warns that loading a *writable*
+    /// library will be refused in future versions, so they are made read-only (r-x).
+    /// </summary>
+    private static void MakeNativesReadOnly(string nativeDir)
+    {
+        if (OperatingSystem.IsWindows() || !Directory.Exists(nativeDir))
+            return;
+
+        foreach (var so in Directory.EnumerateFiles(nativeDir, "*.so"))
+        {
+            try
+            {
+                File.SetUnixFileMode(so, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            }
+            catch (IOException)
+            {
+                // Not critical.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
     public async Task<string> EnsureRuntimeAsync(int major, IProgress<DownloadProgress>? progress = null,
         CancellationToken ct = default)
     {
         var dir = GetInstallDir(major);
         if (File.Exists(Path.Combine(dir, ".installed")))
+        {
+            MakeNativesReadOnly(Path.Combine(dir, "native"));
             return dir;
+        }
 
         var id = $"microsoft.netcore.app.runtime.mono.{AndroidRid}";
         progress?.Report(new DownloadProgress($"Поиск среды .NET {major}", 0, 0));
@@ -135,12 +163,7 @@ public sealed class RuntimeManager
 
         File.Delete(tmp);
 
-        // Native libraries are mapped executable by the game process.
-        if (!OperatingSystem.IsWindows())
-        {
-            foreach (var so in Directory.EnumerateFiles(native, "*.so"))
-                File.SetUnixFileMode(so, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
+        MakeNativesReadOnly(native);
 
         if (!File.Exists(Path.Combine(native, "libmonosgen-2.0.so")) || !File.Exists(Path.Combine(lib, "System.Private.CoreLib.dll")))
             throw new InvalidDataException($"Пакет среды .NET {major} неполный.");
