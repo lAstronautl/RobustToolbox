@@ -265,7 +265,9 @@ namespace Robust.Client
 
             if (_configurationManager.GetCVar(CVars.SysGCCollectStart))
             {
-                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                // LOH compaction mode only exists on CoreCLR; Mono (Android) throws PlatformNotSupportedException.
+                if (!OperatingSystem.IsAndroid())
+                    GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
                 GC.Collect();
             }
 

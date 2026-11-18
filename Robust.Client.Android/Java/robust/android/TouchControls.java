@@ -93,9 +93,9 @@ final class TouchControls extends FrameLayout {
         addView(grid, gridLp);
         hideable.add(grid);
 
-        // --- Modifiers (right edge) ---
+        // --- Modifiers: a row right above the action grid ---
         LinearLayout side = new LinearLayout(ctx);
-        side.setOrientation(LinearLayout.VERTICAL);
+        side.setOrientation(LinearLayout.HORIZONTAL);
         side.setAlpha(alpha);
         rmbToggle = new ToggleKey(ctx, "ПКМ", 0, on -> rightClickMode = on);
         addSide(side, rmbToggle);
@@ -103,8 +103,9 @@ final class TouchControls extends FrameLayout {
         addSide(side, new ToggleKey(ctx, "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, null));   // + tap = pull
         addSide(side, new ToggleKey(ctx, "Alt", KeyEvent.KEYCODE_ALT_LEFT, null));     // + tap = alt-activate
         LayoutParams sideLp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        sideLp.setMargins(0, 0, dp(16), dp(90));
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.RIGHT);
+        // Action grid: 2 rows of 64dp keys with 4dp margins, 16dp from the bottom.
+        sideLp.setMargins(0, 0, dp(16), dp(16 + 2 * 72 + 6));
         addView(side, sideLp);
         hideable.add(side);
 
@@ -148,8 +149,8 @@ final class TouchControls extends FrameLayout {
     }
 
     private void addSide(LinearLayout side, View v) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(64), dp(48));
-        lp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(40));
+        lp.setMargins(dp(3), dp(3), dp(3), dp(3));
         side.addView(v, lp);
     }
 

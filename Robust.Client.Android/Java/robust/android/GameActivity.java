@@ -73,9 +73,9 @@ public class GameActivity extends SDLActivity {
         if (mLayout != null) {
             status = new TextView(this);
             status.setTextColor(Color.argb(220, 232, 238, 246));
-            status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            status.setGravity(Gravity.CENTER);
-            status.setPadding(48, 0, 48, 0);
+            status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            status.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
+            status.setPadding(48, 0, 48, 24);
             status.setText("Загрузка движка…");
             mLayout.addView(status, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -118,11 +118,19 @@ public class GameActivity extends SDLActivity {
     private void pollLog() {
         String tail = readTail(logFile(), 4096);
         if (tail != null && status != null) {
-            if (tail.contains("Runlevel changed"))
+            // Once the engine has a GL context it draws its own loading screen.
+            if (tail.contains("Runlevel changed") || tail.contains("clyde.ogl") || tail.contains("OpenGL"))
                 engineStarted = true;
             boolean fatal = tail.contains("[FATL]") || tail.contains("Fatal:");
             String[] lines = tail.trim().split("\n");
-            String last = lines.length > 0 ? lines[lines.length - 1] : "";
+            String last = "";
+            for (int i = lines.length - 1; i >= 0; i--) {
+                // OpenAL Soft's own warnings are noise here.
+                if (!lines[i].startsWith("[ALSOFT]")) {
+                    last = lines[i];
+                    break;
+                }
+            }
             if (last.length() > 160)
                 last = last.substring(0, 160) + "…";
             if (fatal) {

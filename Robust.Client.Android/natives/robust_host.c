@@ -253,6 +253,8 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     // SDL reads hints from the environment and SDL_Init has not run yet.
     // Without this SDL picks the orientation from the window size and overrides the manifest.
     setenv("SDL_ORIENTATIONS", "LandscapeLeft LandscapeRight", 1);
+    // OpenAL Soft otherwise walks config directories starting at "/" and logs permission errors.
+    setenv("ALSOFT_CONF", "/dev/null", 1);
 
     LOGI("Runtime: %s", runtime_dir);
     LOGI("Host: %s", host_dll);

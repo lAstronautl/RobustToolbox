@@ -39,7 +39,9 @@ internal sealed class GcFullCommand : LocalizedCommands
 
     public override void Execute(IConsoleShell shell, string argStr, string[] args)
     {
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        // CoreCLR only; Mono (Android) throws PlatformNotSupportedException.
+        if (!OperatingSystem.IsAndroid())
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
         GC.Collect(2, GCCollectionMode.Forced, true, true);
     }
 }

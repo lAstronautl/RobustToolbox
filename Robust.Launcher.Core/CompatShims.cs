@@ -20,6 +20,7 @@ public static class CompatShims
         "display.windowing_api=sdl3",
         "discord.enabled=false",
         "font.system=false", // no fontconfig on Android
+        "sys.gc_collect_start=false", // sets GCSettings.LargeObjectHeapCompactionMode: CoreCLR only, throws on Mono
     };
 
     /// <summary>
