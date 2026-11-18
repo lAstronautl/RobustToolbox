@@ -277,8 +277,28 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     // SDL reads hints from the environment and SDL_Init has not run yet.
     // Without this SDL picks the orientation from the window size and overrides the manifest.
     setenv("SDL_ORIENTATIONS", "LandscapeLeft LandscapeRight", 1);
-    // OpenAL Soft otherwise walks config directories starting at "/" and logs permission errors.
-    setenv("ALSOFT_CONF", "/dev/null", 1);
+    // OpenAL Soft config: no HRTF (its mixer crashed with SIGSEGV on a phone), a cheap resampler and a
+    // larger period for slow CPUs. Written next to the log file, i.e. in the app's files dir.
+    // Pointing ALSOFT_CONF at it also stops OpenAL Soft from walking "/" for config files.
+    if (argc >= 8 && argv[7][0])
+    {
+        char conf[4096];
+        snprintf(conf, sizeof(conf), "%s", argv[7]);
+        char *cslash = strrchr(conf, '/');
+        if (cslash)
+        {
+            snprintf(cslash + 1, sizeof(conf) - (size_t)(cslash + 1 - conf), "alsoft.conf");
+            FILE *cf = fopen(conf, "w");
+            if (cf)
+            {
+                fputs("[general]\nhrtf = false\nresampler = linear\nperiod_size = 1024\nperiods = 3\n", cf);
+                fclose(cf);
+                setenv("ALSOFT_CONF", conf, 1);
+            }
+        }
+    }
+    if (!getenv("ALSOFT_CONF"))
+        setenv("ALSOFT_CONF", "/dev/null", 1);
 
     LOGI("Runtime: %s", runtime_dir);
     LOGI("Host: %s", host_dll);

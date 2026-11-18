@@ -28,6 +28,9 @@ public static class CompatShims
         // A slow phone can fall behind while it processes the first full game state.
         "net.connection_timeout=120",
         "net.max_buffer_size=2048",
+        // OpenAL Soft's HRTF mixing path crashed on a phone (SIGSEGV writing past a buffer in alsoft-mixer),
+        // and it is also the most CPU-heavy part of audio. Plain stereo panning instead.
+        "audio.hrtf=false",
     };
 
     /// <summary>
