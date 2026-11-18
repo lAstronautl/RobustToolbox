@@ -336,8 +336,23 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
 #else
         "android";
 #endif
-    // No ICU in the downloaded runtime.
-    keys[n] = "System.Globalization.Invariant"; values[n++] = "true";
+    // .NET on Android uses the system ICU (the runtime package has none). Use it when the system exposes it;
+    // otherwise fall back to invariant mode but still allow creating any culture (e.g. "ru-RU" for content
+    // localization), which then simply formats like the invariant culture.
+    void *icu = dlopen("libicu.so", RTLD_NOW);
+    if (!icu)
+        icu = dlopen("libicuuc.so", RTLD_NOW);
+    if (icu)
+    {
+        dlclose(icu);
+        LOGI("ICU: system");
+    }
+    else
+    {
+        LOGI("ICU: none, invariant globalization mode");
+        keys[n] = "System.Globalization.Invariant"; values[n++] = "true";
+        keys[n] = "System.Globalization.PredefinedCulturesOnly"; values[n++] = "false";
+    }
 
     // Engine runtimeconfig.json properties ("key=value" lines).
     char *cfg = strdup(config);
