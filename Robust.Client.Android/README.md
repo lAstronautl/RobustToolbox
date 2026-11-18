@@ -5,20 +5,25 @@ Android-приложение, которое показывает серверы
 ## Как это устроено
 
 ```
-APK (Robust.Client.Android)
-├─ Лаунчер (MainActivity)      серверы из хаба, избранное, аккаунт, настройки
-├─ GameActivity (процесс :game) SDLActivity → libmain.so → GameHost → EngineLoader
-├─ Нативные .so                SDL3, OpenAL Soft, FreeType, libsodium, zstd
-└─ Robust.Launcher.Core        хаб, авторизация, загрузка движка и контента
+APK
+├─ Лаунчер (MainActivity, C#, .NET 10)   серверы, избранное, аккаунт, настройки
+├─ GameActivity (Java, процесс :game)    SDLActivity + сенсорное управление
+├─ libmain.so (natives/robust_host.c)    SDL_main → загружает нужный Mono → GameHost
+├─ assets/gamehost/Robust.Android.GameHost.dll (net6.0)  запуск движка через ILoaderEntryPoint
+└─ Нативные .so                          SDL3, OpenAL Soft, FreeType, libsodium, zstd
 
-Скачивается во время работы:
-├─ Движок   релизы этого репозитория: android-engine-v<версия>/Robust.Client_android.zip
+Скачивается во время работы (кэш приложения):
+├─ Движок   наш релиз android-engine-v<версия> ИЛИ официальная сборка Space Wizards этой версии
+├─ Среда    Mono-рантайм .NET той версии, под которую собран движок (NuGet: Microsoft.NETCore.App.Runtime.Mono.android-*)
 └─ Контент  с самого сервера (ACZ-манифест /manifest.txt + /download или zip)
 ```
 
-- **Движок в APK не вшит.** Лаунчер берёт `engine_version` из `/info` сервера и скачивает Android-сборку **этой** версии из релизов форка. Подключиться можно к любому серверу, для версии движка которого есть релиз.
-- **Каждая игра — новый процесс `:game`.** Движок нельзя запустить дважды в одном процессе. При выходе из игры процесс завершается, лаунчер продолжает работать.
-- **Песочница контента включена.** DLL фреймворка для проверщика лежат в пакете движка (`framework/`), потому что внутри APK у них нет пути на диске.
+- **Подходит любая версия движка на SDL3 и любая версия .NET (6–10).** Лаунчер берёт `engine_version` из `/info` сервера.
+  - Если есть наша Android-сборка этой версии, используется она: Android-поддержка встроена, песочница включена.
+  - Если нет, скачивается официальная сборка и адаптируется снаружи (`CompatShims`). Это «режим совместимости»: песочница выключена, поэтому лаунчер спрашивает подтверждение для каждого сервера.
+  - Движки на GLFW (без SDL3) на Android не запускаются.
+- **Каждый движок работает на своей версии .NET.** Игровой процесс не использует .NET самого приложения: `robust_host.c` загружает скачанный Mono-рантайм версии из `Robust.Client.runtimeconfig.json` движка. Так движок под .NET 9 не ломается на изменениях .NET 10 (например, `BitArray` стал `ISerializable`).
+- **Каждая игра — новый процесс `:game`.** Ни движок, ни рантайм нельзя перезапустить в том же процессе. Встроенный загрузчик .NET приложения из этого процесса убран при сборке (`RemoveGameProcessMonoProvider`).
 - **Управление.** Слева джойстик (W/A/S/D). Справа кнопки на стандартных клавишах: Z — использовать, E — активировать, X — сменить руку, Q — бросить, H — отпустить, I — инвентарь. Есть залипающие Shift, Ctrl и Alt.
   - Тап — ЛКМ, долгое нажатие — ПКМ.
   - Перетаскивание — ЛКМ с удержанием, два пальца — прокрутка.
@@ -34,7 +39,7 @@ APK (Robust.Client.Android)
 - пути к пользовательским данным (`UserDataDir.cs`) и к исполняемому файлу (`PathHelpers.cs`);
 - имена нативных библиотек (`ZStd.cs`, `DllMapHelper.cs`, `ClientDllMap.cs`);
 - запасной менеджер системных шрифтов вместо fontconfig;
-- каталог фреймворка для песочницы (`AssemblyTypeChecker.cs`, `ROBUST_FRAMEWORK_DIR`);
+- каталог фреймворка для песочницы (`AssemblyTypeChecker.cs`, `ROBUST_FRAMEWORK_DIR`): это сборки скачанного рантайма;
 - исправление: headless-клиент в релизной сборке больше не обращается к OpenGL (`ResourceCache.Preload.cs`).
 
 ## Сборка
@@ -56,4 +61,8 @@ dotnet publish Robust.Client.Android -c Release -p:AndroidSdkDirectory=$ANDROID_
 ```bash
 KEEP_NATIVES=linux-x64 Robust.Client.Android/engine/package-engine.sh /tmp/engine
 dotnet run --project Robust.Launcher.Cli -c Release -- play 127.0.0.1:1212 --engine-zip /tmp/engine/Robust.Client_android.zip --headless
+dotnet run --project Robust.Launcher.Cli -c Release -- play 127.0.0.1:1212 --official   # режим совместимости
+dotnet run --project Robust.Launcher.Cli -c Release -- runtime 9                        # скачать Android-рантайм .NET 9
 ```
+
+Нативный хост можно собрать под Linux для проверки: `gcc -DROBUST_HOST_TEST natives/robust_host.c -ldl -lpthread`.

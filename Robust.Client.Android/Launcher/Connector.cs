@@ -22,12 +22,12 @@ public sealed class Connector
         _cacheDir = cacheDir;
     }
 
-    /// <summary>Returns the path of the launch spec file for the game process.</summary>
+    /// <summary>Prepares everything and returns what the game process needs to start.</summary>
     /// <param name="confirmCompatMode">
     /// Asked when only the official engine build is available (runs without the content sandbox).
     /// Gets the engine version, returns whether the user agreed.
     /// </param>
-    public async Task<string> PrepareAsync(ServerAddress address, float defaultUiScale,
+    public async Task<GameLaunch> PrepareAsync(ServerAddress address, float defaultUiScale,
         Func<string, Task<bool>> confirmCompatMode, IProgress<DownloadProgress> progress, CancellationToken ct)
     {
         progress.Report(new DownloadProgress("Получение информации о сервере", 0, 0));
@@ -93,10 +93,14 @@ public sealed class Connector
         var content = new ContentManager(_http, Path.Combine(_cacheDir, "content"));
         var bundle = await content.EnsureContentAsync(address, info, progress, ct);
 
+        // .NET runtime: the Mono runtime of the .NET version this engine build targets.
+        var runtimeInfo = EngineRuntimeInfo.Read(engine.Dir);
+        var runtimeDir = await new RuntimeManager(_http, _cacheDir).EnsureRuntimeAsync(runtimeInfo.Major, progress, ct);
+
         var launchDir = Path.Combine(_filesDir, "launch");
         Directory.CreateDirectory(launchDir);
         var bundlePath = Path.Combine(launchDir, "content.json");
-        ContentManager.SaveBundle(bundle, bundlePath);
+        bundle.Save(bundlePath);
 
         var username = login?.Username ?? (string.IsNullOrWhiteSpace(_settings.GuestName) ? null : _settings.GuestName);
         var uiScale = _settings.UiScale > 0 ? _settings.UiScale : defaultUiScale;
@@ -110,15 +114,24 @@ public sealed class Connector
             EngineDir = engine.Dir,
             EngineSource = engine.Source,
             ContentBundlePath = bundlePath,
-            EngineArgs = EngineLoader.BuildEngineArgs(address, info, username, cvars),
-            Environment = EngineLoader.BuildAuthEnvironment(login, info),
+            EngineArgs = LaunchArgs.BuildEngineArgs(address, info, username, cvars),
+            Environment = LaunchArgs.BuildAuthEnvironment(login, info),
+            // Lets the sandbox verifier of our engine builds find framework assemblies.
+            FrameworkDir = Path.Combine(runtimeDir, "lib"),
         };
+        // Official builds keep user data under $HOME (their Linux code path).
+        spec.Environment["HOME"] = _filesDir;
 
         // The spec may contain the auth token: it lives in app-private storage and the game deletes it after reading.
         var specPath = Path.Combine(launchDir, "spec.json");
         await File.WriteAllTextAsync(specPath, JsonSerializer.Serialize(spec), ct);
-        return specPath;
+
+        var config = string.Join("\n", runtimeInfo.ConfigProperties.Select(kv => $"{kv.Key}={kv.Value}"));
+        return new GameLaunch(specPath, runtimeDir, config, runtimeInfo.Major);
     }
 }
+
+/// <param name="RuntimeConfig">Engine runtimeconfig.json properties as "key=value" lines for the native host.</param>
+public sealed record GameLaunch(string SpecPath, string RuntimeDir, string RuntimeConfig, int DotnetMajor);
 
 public sealed class UserFacingException(string message) : Exception(message);

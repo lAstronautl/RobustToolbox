@@ -3,18 +3,6 @@ using System.Security.Cryptography;
 
 namespace Robust.Launcher.Core;
 
-public enum EngineSource
-{
-    /// <summary>Our Android build of the engine (Android support compiled in).</summary>
-    Patched,
-
-    /// <summary>
-    /// Official Space Wizards build of that version, adapted to Android from the outside (see <see cref="CompatShims"/>).
-    /// Runs with the content sandbox disabled.
-    /// </summary>
-    Official,
-}
-
 public sealed record ResolvedEngine(string Dir, EngineSource Source, string Version);
 
 public enum EngineAvailability

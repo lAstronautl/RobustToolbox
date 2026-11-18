@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Packages the managed engine (Robust.Client + dependencies + Resources/) for the Android launcher.
+# Packages the managed engine (Robust.Client + dependencies + Resources/ + runtimeconfig) for the Android launcher.
+# The .NET runtime itself is not included: the app downloads the Mono runtime of the version in runtimeconfig.
 # The launcher downloads this zip from GitHub releases (tag android-engine-v<version>).
 #
 # Usage: package-engine.sh [output-dir]
@@ -29,19 +30,8 @@ fi
 rm -f "$STAGE/pkg/Robust.Client.WebView.dll" "$STAGE/pkg/Xilium.CefGlue.dll"
 cp -r "$ROOT/Resources" "$STAGE/pkg/Resources"
 
-# Framework assemblies for the content sandbox verifier: on Android the real ones are packed inside the APK
-# and have no file path. Taken from the Mono Android runtime pack of the SDK doing the build.
-DOTNET_ROOT_DIR="${DOTNET_ROOT:-$(dirname "$(readlink -f "$(command -v dotnet)")")}"
-NETVER=$(dotnet --version | cut -d. -f1)
-PACK=$(ls -d "$DOTNET_ROOT_DIR"/packs/Microsoft.NETCore.App.Runtime.Mono.android-arm64/$NETVER.* 2>/dev/null | sort -V | tail -1 || true)
-if [ -n "$PACK" ]; then
-  mkdir -p "$STAGE/pkg/framework"
-  cp "$PACK"/runtimes/android-arm64/lib/net*/*.dll "$STAGE/pkg/framework/"
-  cp "$PACK"/runtimes/android-arm64/native/System.Private.CoreLib.dll "$STAGE/pkg/framework/"
-  echo "Framework assemblies from $PACK"
-else
-  echo "WARNING: android runtime pack not found (dotnet workload install android); sandbox will not work on device" >&2
-fi
+# Tells the game process which .NET runtime version to start for this engine.
+cp "$STAGE/publish/Robust.Client.runtimeconfig.json" "$STAGE/pkg/"
 echo "$VERSION" > "$STAGE/pkg/engine-version.txt"
 
 mkdir -p "$OUT"

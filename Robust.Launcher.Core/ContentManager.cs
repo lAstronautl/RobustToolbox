@@ -245,32 +245,4 @@ public sealed class ContentManager
         return new ContentBundle(null, zipPath);
     }
 
-    // ---- Serialization so the game process can reopen what the launcher downloaded ----
-
-    public static void SaveBundle(ContentBundle bundle, string path)
-    {
-        File.WriteAllText(path, JsonSerializer.Serialize(new BundleDto(bundle.Files, bundle.ZipPath)));
-    }
-
-    public static ContentBundle LoadBundle(string path)
-    {
-        var dto = JsonSerializer.Deserialize<BundleDto>(File.ReadAllText(path))
-                  ?? throw new InvalidDataException("Bad content bundle file");
-        return new ContentBundle(dto.Files, dto.ZipPath);
-    }
-
-    private sealed record BundleDto(Dictionary<string, string>? Files, string? ZipPath);
-}
-
-/// <summary>
-/// Downloaded content: either a path → blob file map (manifest) or a single zip.
-/// </summary>
-public sealed record ContentBundle(Dictionary<string, string>? Files, string? ZipPath)
-{
-    public Robust.LoaderApi.IFileApi OpenFileApi()
-    {
-        if (Files != null)
-            return new BlobFileApi(Files);
-        return new ZipFileApi(ZipFile.OpenRead(ZipPath!));
-    }
 }

@@ -15,6 +15,7 @@ on:
     paths:
       - "Robust.Client.Android/**"
       - "Robust.Launcher.Core/**"
+      - "Robust.Android.GameHost/**"
       - ".github/workflows/android.yml"
 
 permissions:
@@ -51,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Robust.Client.Android/natives/out
-          key: android-natives-${{ hashFiles('Robust.Client.Android/natives/build-natives.sh', 'Robust.Client.Android/natives/main_shim.c') }}
+          key: android-natives-${{ hashFiles('Robust.Client.Android/natives/build-natives.sh', 'Robust.Client.Android/natives/robust_host.c') }}
 
       - name: Build native libraries
         if: steps.natives-cache.outputs.cache-hit != 'true'

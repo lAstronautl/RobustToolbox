@@ -89,8 +89,8 @@ for abi in $ABIS; do
   fi
   cp "$sb/lib/libsodium.so" "$o/libsodium.so"
 
-  # Bridge so SDLActivity can call back into managed code as SDL_main.
-  "$LLVM/bin/${triple}${API}-clang" -shared -fPIC -O2 -o "$o/libmain.so" "$HERE/main_shim.c"
+  # Native host: SDL_main → downloaded Mono runtime → Robust.Android.GameHost.
+  "$LLVM/bin/${triple}${API}-clang" -shared -fPIC -O2 -Wall -o "$o/libmain.so" "$HERE/robust_host.c" -llog -ldl
 
   "$LLVM/bin/llvm-strip" --strip-unneeded "$o"/*.so
   ls -la "$o"

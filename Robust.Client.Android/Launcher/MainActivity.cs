@@ -4,7 +4,6 @@ using Android.Content.PM;
 using Android.OS;
 using Android.Views;
 using Android.Widget;
-using Robust.Client.Android.Game;
 using Robust.Launcher.Core;
 
 namespace Robust.Client.Android.Launcher;
@@ -514,11 +513,11 @@ public sealed class MainActivity : Activity
         };
         col.AddView(hubUrl, Ui.Fill(0, 6, this));
 
-        col.AddView(Ui.Button(this, "Очистить кэш (движки и контент)", () =>
+        col.AddView(Ui.Button(this, "Очистить кэш (движки, среды .NET, контент)", () =>
         {
             try
             {
-                foreach (var d in new[] { "engines", "content" })
+                foreach (var d in new[] { "engines", "content", "runtimes" })
                 {
                     var p = System.IO.Path.Combine(CachePath, d);
                     if (Directory.Exists(p)) Directory.Delete(p, true);
@@ -633,19 +632,38 @@ public sealed class MainActivity : Activity
         return $"{p.Done} / {p.Total}";
     }
 
-    private void StartGame(string specPath)
+    private string CrashFile => System.IO.Path.Combine(FilesPath, "last-crash.txt");
+
+    /// <summary>Extracts the game host assembly from the APK (cheap, done on every launch so updates apply).</summary>
+    private string ExtractGameHost()
     {
-        var intent = new Intent(this, typeof(GameActivity));
-        intent.PutExtra(GameActivity.ExtraSpecPath, specPath);
-        intent.PutExtra(GameActivity.ExtraTouchControls, _settings.TouchControls);
-        intent.PutExtra(GameActivity.ExtraTouchOpacity, _settings.TouchOpacity);
-        intent.PutExtra(GameActivity.ExtraTouchScale, _settings.TouchScale);
+        var dir = Directory.CreateDirectory(System.IO.Path.Combine(FilesPath, "gamehost")).FullName;
+        var path = System.IO.Path.Combine(dir, "Robust.Android.GameHost.dll");
+        using var src = Assets!.Open("gamehost/Robust.Android.GameHost.dll");
+        using var dst = File.Create(path);
+        src.CopyTo(dst);
+        return path;
+    }
+
+    private void StartGame(GameLaunch launch)
+    {
+        // Must match robust.android.GameActivity (Java/robust/android/GameActivity.java).
+        var intent = new Intent();
+        intent.SetClassName(this, "robust.android.GameActivity");
+        intent.PutExtra("runtime_dir", launch.RuntimeDir);
+        intent.PutExtra("host_dll", ExtractGameHost());
+        intent.PutExtra("spec", launch.SpecPath);
+        intent.PutExtra("crash", CrashFile);
+        intent.PutExtra("runtime_config", launch.RuntimeConfig);
+        intent.PutExtra("touch", _settings.TouchControls);
+        intent.PutExtra("touch_opacity", _settings.TouchOpacity);
+        intent.PutExtra("touch_scale", _settings.TouchScale);
         StartActivity(intent);
     }
 
     private void ShowLastCrashIfAny()
     {
-        var path = GameActivity.CrashFilePath(FilesPath);
+        var path = CrashFile;
         if (!File.Exists(path))
             return;
 
