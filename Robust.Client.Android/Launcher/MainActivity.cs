@@ -239,10 +239,16 @@ public sealed class MainActivity : Activity
                 var srvInfo = await api.GetInfoAsync(addr);
                 var ver = srvInfo.Build?.EngineVersion ?? "?";
                 var engines = new EngineManager(Http, CachePath, _settings.EngineReleaseBase);
-                var available = ver != "?" && await engines.IsAvailableAsync(ver);
+                var availability = ver == "?" ? EngineAvailability.None : await engines.CheckAvailabilityAsync(ver);
+                var engineText = availability switch
+                {
+                    EngineAvailability.Patched => "✔ Android-сборка",
+                    EngineAvailability.Official => "⚠ режим совместимости (без песочницы)",
+                    _ => "✘ не поддерживается",
+                };
                 text = $"Игроков: {status.Players}/{status.SoftMaxPlayers}\n" +
                        (status.Map != null ? $"Карта: {status.Map}\n" : "") +
-                       $"Движок: {ver} — {(available ? "✔ есть Android-сборка" : "✘ нет Android-сборки")}\n" +
+                       $"Движок: {ver} — {engineText}\n" +
                        $"Вход: {AuthText(srvInfo.Auth?.Mode)}" +
                        (string.IsNullOrWhiteSpace(srvInfo.Description) ? "" : $"\n\n{srvInfo.Description}");
             }
@@ -571,7 +577,7 @@ public sealed class MainActivity : Activity
             try
             {
                 var connector = new Connector(Http, _settings, FilesPath, CachePath);
-                var spec = await connector.PrepareAsync(address, defaultScale, progress, cts.Token);
+                var spec = await connector.PrepareAsync(address, defaultScale, ConfirmCompatModeAsync, progress, cts.Token);
                 RunOnUiThread(() =>
                 {
                     dialog.Dismiss();
@@ -596,6 +602,27 @@ public sealed class MainActivity : Activity
                 });
             }
         });
+    }
+
+    private Task<bool> ConfirmCompatModeAsync(string engineVersion)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        RunOnUiThread(() =>
+        {
+            new AlertDialog.Builder(this)
+                .SetTitle("Режим совместимости")!
+                .SetMessage(
+                    $"Для движка {engineVersion} нет Android-сборки. Можно запустить официальную сборку этой версии, " +
+                    "адаптированную под Android.\n\n" +
+                    "В этом режиме песочница отключена: код сервера получит полный доступ к приложению " +
+                    "(в том числе к сохранённому входу в аккаунт). Подключайтесь так только к серверам, которым доверяете.\n\n" +
+                    "Возможны сбои: такие сборки не проверялись на Android.")!
+                .SetCancelable(false)!
+                .SetPositiveButton("Доверяю, запустить", (_, _) => tcs.TrySetResult(true))!
+                .SetNegativeButton("Отмена", (_, _) => tcs.TrySetResult(false))!
+                .Show();
+        });
+        return tcs.Task;
     }
 
     private static string FormatAmount(DownloadProgress p)

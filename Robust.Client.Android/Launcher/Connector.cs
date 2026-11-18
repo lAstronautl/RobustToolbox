@@ -23,8 +23,12 @@ public sealed class Connector
     }
 
     /// <summary>Returns the path of the launch spec file for the game process.</summary>
+    /// <param name="confirmCompatMode">
+    /// Asked when only the official engine build is available (runs without the content sandbox).
+    /// Gets the engine version, returns whether the user agreed.
+    /// </param>
     public async Task<string> PrepareAsync(ServerAddress address, float defaultUiScale,
-        IProgress<DownloadProgress> progress, CancellationToken ct)
+        Func<string, Task<bool>> confirmCompatMode, IProgress<DownloadProgress> progress, CancellationToken ct)
     {
         progress.Report(new DownloadProgress("Получение информации о сервере", 0, 0));
         var info = await new ServerApi(_http).GetInfoAsync(address, ct);
@@ -57,18 +61,32 @@ public sealed class Connector
         if (login == null && authMode == "Required")
             throw new UserFacingException("Этот сервер требует вход в аккаунт. Войдите на вкладке «Аккаунт».");
 
-        // Engine: our Android build of the exact version the server runs.
+        // Engine: our Android build of that version if published, otherwise the official build adapted at runtime.
         var engines = new EngineManager(_http, _cacheDir, _settings.EngineReleaseBase);
-        string engineDir;
+        var availability = await engines.CheckAvailabilityAsync(engineVersion, ct);
+        if (availability == EngineAvailability.None)
+            throw new UserFacingException($"Движок версии {engineVersion} не найден ни в Android-сборках, ни в официальных.");
+
+        if (availability == EngineAvailability.Official && !_settings.TrustedServers.Contains(address.Original))
+        {
+            if (!await confirmCompatMode(engineVersion))
+                throw new System.OperationCanceledException();
+            _settings.TrustedServers.Add(address.Original);
+            _settings.Save(_filesDir);
+        }
+
+        ResolvedEngine engine;
         try
         {
-            engineDir = await engines.EnsureEngineAsync(engineVersion, progress, ct);
+            engine = await engines.ResolveEngineAsync(engineVersion, progress, ct: ct);
         }
-        catch (EngineNotAvailableException)
+        catch (EngineTooOldException e)
         {
-            throw new UserFacingException(
-                $"Сервер работает на движке {engineVersion}, а Android-сборки этой версии пока нет.\n" +
-                "Соберите её в CI (workflow «Android engine») или выберите другой сервер.");
+            throw new UserFacingException(e.Message);
+        }
+        catch (EngineNotAvailableException e)
+        {
+            throw new UserFacingException(e.Message);
         }
 
         // Content.
@@ -82,15 +100,15 @@ public sealed class Connector
 
         var username = login?.Username ?? (string.IsNullOrWhiteSpace(_settings.GuestName) ? null : _settings.GuestName);
         var uiScale = _settings.UiScale > 0 ? _settings.UiScale : defaultUiScale;
-        var cvars = new List<string>
+        var cvars = new List<string>(CompatShims.AndroidCVars)
         {
-            "discord.enabled=false",
             $"display.uiScale={uiScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
         };
 
         var spec = new GameLaunchSpec
         {
-            EngineDir = engineDir,
+            EngineDir = engine.Dir,
+            EngineSource = engine.Source,
             ContentBundlePath = bundlePath,
             EngineArgs = EngineLoader.BuildEngineArgs(address, info, username, cvars),
             Environment = EngineLoader.BuildAuthEnvironment(login, info),

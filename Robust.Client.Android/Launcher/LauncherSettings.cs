@@ -11,6 +11,8 @@ public sealed class LauncherSettings
     public LoginInfo? Login { get; set; }
     public string GuestName { get; set; } = "";
     public List<FavoriteServer> Favorites { get; set; } = new();
+    /// <summary>Servers the user allowed to run in compatibility mode (official engine build, no sandbox).</summary>
+    public HashSet<string> TrustedServers { get; set; } = new();
     public string HubUrl { get; set; } = ServerApi.DefaultHubUrl;
     public string EngineReleaseBase { get; set; } = EngineManager.DefaultReleaseBase;
     /// <summary>0 = automatic (from screen density).</summary>

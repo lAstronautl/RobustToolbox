@@ -50,6 +50,9 @@ internal static unsafe class GameHost
             if (_spec == null)
                 throw new InvalidOperationException(_prepareError ?? "Нет параметров запуска.");
 
+            // Official engine builds put user data under $HOME/.local/share (their Linux code path).
+            Environment.SetEnvironmentVariable("HOME", _filesDir);
+
             // SDL hints can be given through the environment.
             Environment.SetEnvironmentVariable("SDL_ANDROID_TRAP_BACK_BUTTON", "1");
             // Touches still reach SDL as mouse events when the overlay passes them through.

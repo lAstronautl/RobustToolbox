@@ -3,7 +3,8 @@ using Robust.Launcher.Core;
 // Usage:
 //   Robust.Launcher.Cli hub
 //   Robust.Launcher.Cli info <address>
-//   Robust.Launcher.Cli play <address> [--engine-zip <zip>] [--cache <dir>] [--headless] [--username <name>]
+//   Robust.Launcher.Cli play <address> [--engine-zip <zip>] [--official] [--cache <dir>] [--headless] [--username <name>]
+//     --official: use the official Space Wizards build of the server's engine version (compatibility mode)
 var cache = GetOpt("--cache") ?? Path.Combine(Path.GetTempPath(), "robust-launcher-cli");
 using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
 http.DefaultRequestHeaders.UserAgent.ParseAdd("RobustLauncherCli/1.0");
@@ -39,8 +40,8 @@ switch (args.ElementAtOrDefault(0))
         if (GetOpt("--engine-zip") is { } zip)
             EngineManager.InstallFromZip(zip, engines.GetInstallDir(engineVersion));
         var progress = new Progress<DownloadProgress>(p => Console.Write($"\r{p.Stage}: {p.Done}/{p.Total}      "));
-        var engineDir = await engines.EnsureEngineAsync(engineVersion, progress);
-        Console.WriteLine($"\nEngine: {engineDir}");
+        var engine = await engines.ResolveEngineAsync(engineVersion, progress, forceOfficial: args.Contains("--official"));
+        Console.WriteLine($"\nEngine: {engine.Dir} ({engine.Source})");
 
         var content = new ContentManager(http, Path.Combine(cache, "content"));
         var bundle = await content.EnsureContentAsync(addr, info, progress);
@@ -54,7 +55,8 @@ switch (args.ElementAtOrDefault(0))
 
         EngineLoader.Run(new GameLaunchSpec
         {
-            EngineDir = engineDir,
+            EngineDir = engine.Dir,
+            EngineSource = engine.Source,
             ContentBundlePath = bundlePath,
             EngineArgs = engineArgs.ToArray(),
             Environment = new() { ["ROBUST_DISABLE_SANDBOX"] = Environment.GetEnvironmentVariable("ROBUST_DISABLE_SANDBOX") ?? "0" },

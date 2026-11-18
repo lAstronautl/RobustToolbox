@@ -10,6 +10,7 @@ namespace Robust.Launcher.Core;
 public sealed class GameLaunchSpec
 {
     public string EngineDir { get; set; } = "";
+    public EngineSource EngineSource { get; set; } = EngineSource.Patched;
     public string ContentBundlePath { get; set; } = "";
     public string[] EngineArgs { get; set; } = Array.Empty<string>();
     public Dictionary<string, string> Environment { get; set; } = new();
@@ -92,6 +93,9 @@ public static class EngineLoader
             System.Environment.SetEnvironmentVariable(k, v);
 
         var engineDir = Path.GetFullPath(spec.EngineDir);
+
+        if (spec.EngineSource == EngineSource.Official)
+            CompatShims.ApplyForOfficialBuild(engineDir);
 
         // Framework assemblies for the content sandbox verifier (see AssemblyTypeChecker).
         var frameworkDir = Path.Combine(engineDir, "framework");
