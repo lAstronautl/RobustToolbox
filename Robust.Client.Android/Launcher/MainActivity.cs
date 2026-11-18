@@ -78,6 +78,7 @@ public sealed class MainActivity : Activity
     protected override void OnResume()
     {
         base.OnResume();
+        CheckUnexpectedGameExit();
         ShowLastCrashIfAny();
     }
 
@@ -664,19 +665,16 @@ public sealed class MainActivity : Activity
             return;
         }
 
-        string text;
-        try
+        var filesDir = FilesPath;
+        _ = Task.Run(() =>
         {
-            using var fs = new FileStream(GameLogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(fs);
-            var lines = reader.ReadToEnd().Split('\n');
-            text = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - 300)));
-        }
-        catch (Exception e)
-        {
-            text = e.Message;
-        }
+            var text = GameLogCollector.Collect(filesDir);
+            RunOnUiThread(() => ShowLogDialog(text));
+        });
+    }
 
+    private void ShowLogDialog(string text)
+    {
         var view = Ui.Label(this, text, 11);
         view.SetTextIsSelectable(true);
         view.SetPadding(Ui.Dp(this, 16), Ui.Dp(this, 8), Ui.Dp(this, 16), Ui.Dp(this, 8));
@@ -715,8 +713,60 @@ public sealed class MainActivity : Activity
         return path;
     }
 
+    private string GameStartedMarker => System.IO.Path.Combine(FilesPath, "game-started");
+
+    private bool IsGameProcessRunning()
+    {
+        var am = (ActivityManager?)GetSystemService(ActivityService);
+        var procs = am?.RunningAppProcesses;
+        return procs != null && procs.Any(p => p.ProcessName?.EndsWith(":game") == true);
+    }
+
+    /// <summary>
+    /// The game died without a managed exception (native crash, killed for memory...):
+    /// grab logcat right away (it is a ring buffer) and offer the log.
+    /// </summary>
+    private void CheckUnexpectedGameExit()
+    {
+        if (!File.Exists(GameStartedMarker) || IsGameProcessRunning())
+            return;
+        File.Delete(GameStartedMarker);
+
+        string log;
+        try
+        {
+            using var fs = new FileStream(GameLogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            log = new StreamReader(fs).ReadToEnd();
+        }
+        catch
+        {
+            log = "";
+        }
+
+        GameLogCollector.SnapshotLogcat(FilesPath);
+        if (log.Contains("Game host exited with 0") || File.Exists(CrashFile))
+            return;
+
+        new AlertDialog.Builder(this)
+            .SetTitle("Игра неожиданно закрылась")!
+            .SetMessage("Похоже, процесс игры аварийно завершился (без ошибки .NET). Лог поможет понять причину — его можно скопировать или отправить.")!
+            .SetPositiveButton("Показать лог", (_, _) => ShowGameLog())!
+            .SetNegativeButton("Закрыть", (_, _) => { })!
+            .Show();
+    }
+
     private void StartGame(GameLaunch launch)
     {
+        try
+        {
+            File.Delete(GameLogCollector.LogcatSnapshot(FilesPath));
+            File.WriteAllText(GameStartedMarker, DateTime.UtcNow.ToString("O"));
+        }
+        catch
+        {
+            // ignored
+        }
+
         // Must match robust.android.GameActivity (Java/robust/android/GameActivity.java).
         var intent = new Intent();
         intent.SetClassName(this, "robust.android.GameActivity");
@@ -736,6 +786,8 @@ public sealed class MainActivity : Activity
         var path = CrashFile;
         if (!File.Exists(path))
             return;
+        if (File.Exists(GameStartedMarker))
+            File.Delete(GameStartedMarker);
 
         var text = File.ReadAllText(path);
         File.Delete(path);
