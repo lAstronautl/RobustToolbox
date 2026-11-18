@@ -72,6 +72,35 @@ internal static class GameLogCollector
             result.Add(line.Length > 400 ? line[..400] + "…" : line);
         }
 
+        return CollapseRepeats(result);
+    }
+
+    private static readonly Regex LogcatPrefix = new(@"^\d\d-\d\d \d\d:\d\d:\d\d\.\d+ ", RegexOptions.Compiled);
+
+    /// <summary>Consecutive lines that differ only by timestamp become one line with a "(×N)" count.</summary>
+    internal static List<string> CollapseRepeats(List<string> lines)
+    {
+        var result = new List<string>();
+        string? lastKey = null;
+        var count = 0;
+        foreach (var line in lines)
+        {
+            var key = LogcatPrefix.Replace(line, "");
+            if (key == lastKey)
+            {
+                count++;
+                continue;
+            }
+
+            if (count > 1)
+                result[^1] += $"  (×{count})";
+            result.Add(line);
+            lastKey = key;
+            count = 1;
+        }
+
+        if (count > 1)
+            result[^1] += $"  (×{count})";
         return result;
     }
 
@@ -132,7 +161,10 @@ internal static class GameLogCollector
 
         var important = run.Where(l => l.Contains("Fatal") || l.Contains("Exception") || l.Contains("[FATL]")
                                        || l.Contains("[ERRO]") || l.Contains("lowmemorykiller") || l.Contains("lmkd")
-                                       || l.Contains("onTrimMemory") || l.Contains("onLowMemory")).ToList();
+                                       || l.Contains("onLowMemory") || l.Contains("Disconnect")
+                                       || l.Contains("Status changed") || l.Contains("timed out")
+                                       || l.Contains("Runlevel changed") || l.Contains("Exceeded maximum state")
+                                       || l.Contains("Cannot keep up")).ToList();
         var mem = run.Where(l => l.Contains("[mem]")).TakeLast(5).ToList();
 
         var sb = new StringBuilder();

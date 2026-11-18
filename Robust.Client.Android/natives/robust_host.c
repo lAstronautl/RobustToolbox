@@ -252,6 +252,28 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     // The launcher uses this to pick this run's lines out of logcat.
     LOGI("PID: %d", (int)getpid());
 
+    // Mono's GC: concurrent mark-sweep and a soft heap limit (~30% of RAM) so major collections happen before
+    // Android kills the game for memory. Without it the managed heap grew past 2 GB on a 4 GB phone.
+    {
+        long mem_kb = 0;
+        FILE *mi = fopen("/proc/meminfo", "r");
+        if (mi)
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), mi))
+                if (sscanf(line, "MemTotal: %ld kB", &mem_kb) == 1)
+                    break;
+            fclose(mi);
+        }
+        long limit_mb = mem_kb > 0 ? mem_kb / 1024 * 3 / 10 : 1024;
+        if (limit_mb < 512)
+            limit_mb = 512;
+        char gc[128];
+        snprintf(gc, sizeof(gc), "major=marksweep-conc,soft-heap-limit=%ldm", limit_mb);
+        setenv("MONO_GC_PARAMS", gc, 0);
+        LOGI("MONO_GC_PARAMS=%s (RAM %ld MB)", getenv("MONO_GC_PARAMS"), mem_kb / 1024);
+    }
+
     // SDL reads hints from the environment and SDL_Init has not run yet.
     // Without this SDL picks the orientation from the window size and overrides the manifest.
     setenv("SDL_ORIENTATIONS", "LandscapeLeft LandscapeRight", 1);

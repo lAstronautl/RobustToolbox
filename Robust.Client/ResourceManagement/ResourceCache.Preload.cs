@@ -39,6 +39,14 @@ namespace Robust.Client.ResourceManagement
         {
             var sawmill = _logManager.GetSawmill("res.preload");
 
+            // On phones, atlasing every RSI up front costs hundreds of MB (giant atlas images) and gets the game
+            // killed for memory. With preloading off, RSIs are loaded on demand instead.
+            if (OperatingSystem.IsAndroid() && !_configurationManager.GetCVar(CVars.ResTexturePreloadingEnabled))
+            {
+                sawmill.Debug("Skipping RSI and texture preloading on Android due to CVar value.");
+                return;
+            }
+
             PreloadRsis(sawmill);
             if (!_configurationManager.GetCVar(CVars.ResTexturePreloadingEnabled))
             {

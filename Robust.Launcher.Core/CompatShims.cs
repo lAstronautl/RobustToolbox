@@ -21,6 +21,13 @@ public static class CompatShims
         "discord.enabled=false",
         "font.system=false", // no fontconfig on Android
         "sys.gc_collect_start=false", // sets GCSettings.LargeObjectHeapCompactionMode: CoreCLR only, throws on Mono
+        // Memory: phones have 3-6 GB shared with the GPU. Our engine builds skip RSI atlas preloading with this;
+        // older/official builds at least skip plain texture preloading. Smaller atlases waste less on padding.
+        "res.texturepreloadingenabled=false",
+        "res.rsi_atlas_size=4096",
+        // A slow phone can fall behind while it processes the first full game state.
+        "net.connection_timeout=120",
+        "net.max_buffer_size=2048",
     };
 
     /// <summary>
