@@ -8,28 +8,36 @@ using Robust.Launcher.Core;
 
 namespace Robust.Client.Android.Launcher;
 
+/// <summary>
+/// Launcher screen. Layout and look follow the official SS14 launcher: stripeback header with the title and
+/// account button, angled tabs (Главная / Серверы / Игра / Настройки), server list with alternating rows.
+/// </summary>
 [Activity(Label = "@string/app_name", MainLauncher = true, Exported = true, Theme = "@style/LauncherTheme",
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.KeyboardHidden,
     WindowSoftInputMode = SoftInput.AdjustResize)]
 public sealed class MainActivity : Activity
 {
-    private enum Tab { Servers, Favorites, Account, Settings }
+    private enum Tab { Home, Servers, Game, Settings }
+
+    private const string AccountSiteUrl = "https://account.spacestation14.com/";
 
     private static readonly HttpClient Http = CreateHttp();
 
     private LauncherSettings _settings = null!;
     private FrameLayout _content = null!;
-    private readonly Dictionary<Tab, Button> _tabButtons = new();
-    private Tab _tab = Tab.Servers;
+    private Button _accountButton = null!;
+    private readonly Dictionary<Tab, TextView> _tabButtons = new();
+    private Tab _tab = Tab.Home;
 
     private List<HubServerEntry> _hubServers = new();
     private string _filter = "";
+    private bool _hideEmpty;
     private CancellationTokenSource? _connectCts;
 
     private static HttpClient CreateHttp()
     {
         var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("RobustAndroidLauncher/0.1");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("RobustAndroidLauncher/0.2");
         return http;
     }
 
@@ -41,37 +49,54 @@ public sealed class MainActivity : Activity
         base.OnCreate(savedInstanceState);
         _settings = LauncherSettings.Load(FilesPath);
         CleanupOldRuntimeLocation();
+        Window?.SetStatusBarColor(Ui.ListRowA);
+        Window?.SetNavigationBarColor(Ui.Bg);
 
         var root = Ui.Column(this);
         root.SetBackgroundColor(Ui.Bg);
 
+        // --- Header: stripeback band with the title (gold) and the account button.
         var header = Ui.Row(this);
-        header.SetPadding(Ui.Dp(this, 16), Ui.Dp(this, 14), Ui.Dp(this, 16), Ui.Dp(this, 6));
-        header.AddView(Ui.Label(this, GetString(Resource.String.app_name), 22, bold: true), Ui.Fill(1));
+        header.Background = new Ui.StripeDrawable(Ui.Dp(this, 22));
+        header.SetPadding(Ui.Dp(this, 14), Ui.Dp(this, 10), Ui.Dp(this, 10), Ui.Dp(this, 10));
+        var title = Ui.Label(this, GetString(Resource.String.app_name).ToUpperInvariant(), 22, Ui.NanoGold, bold: true);
+        title.LetterSpacing = 0.08f;
+        header.AddView(title, Ui.Fill(1));
+        _accountButton = Ui.Button(this, "", () => ShowTab(Tab.Settings));
+        _accountButton.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 14);
+        header.AddView(_accountButton, Ui.Wrap(8, this));
         root.AddView(header);
+        UpdateAccountButton();
 
+        // --- Tabs: angled items; the selected one is green like the launcher's tab control.
         var tabs = Ui.Row(this);
-        tabs.SetPadding(Ui.Dp(this, 10), 0, Ui.Dp(this, 10), Ui.Dp(this, 6));
-        foreach (var (tab, title) in new[]
+        tabs.SetPadding(Ui.Dp(this, 8), Ui.Dp(this, 8), Ui.Dp(this, 8), 0);
+        foreach (var (tab, text) in new[]
                  {
-                     (Tab.Servers, "Серверы"), (Tab.Favorites, "Избранное"), (Tab.Account, "Аккаунт"),
-                     (Tab.Settings, "Настройки")
+                     (Tab.Home, "Главная"), (Tab.Servers, "Серверы"), (Tab.Game, "Игра"), (Tab.Settings, "Настройки")
                  })
         {
-            var b = Ui.Button(this, title, () => ShowTab(tab));
+            var t = Ui.Label(this, text, 15);
+            t.Gravity = GravityFlags.Center;
+            t.SetPadding(0, Ui.Dp(this, 10), 0, Ui.Dp(this, 10));
+            t.Clickable = true;
+            t.Click += (_, _) => ShowTab(tab);
             var lp = Ui.Fill(1);
-            lp.SetMargins(Ui.Dp(this, 3), 0, Ui.Dp(this, 3), 0);
-            tabs.AddView(b, lp);
-            _tabButtons[tab] = b;
+            lp.SetMargins(Ui.Dp(this, 2), 0, Ui.Dp(this, 2), 0);
+            tabs.AddView(t, lp);
+            _tabButtons[tab] = t;
         }
 
         root.AddView(tabs);
+        var under = new View(this);
+        under.SetBackgroundColor(Ui.ControlHigh);
+        root.AddView(under, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Ui.Dp(this, 2)));
 
         _content = new FrameLayout(this);
         root.AddView(_content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1));
         SetContentView(root);
 
-        ShowTab(_settings.Login == null && _settings.Favorites.Count == 0 ? Tab.Servers : Tab.Favorites);
+        ShowTab(_settings.Favorites.Count == 0 ? Tab.Servers : Tab.Home);
         ShowLastCrashIfAny();
     }
 
@@ -97,49 +122,121 @@ public sealed class MainActivity : Activity
         }
     }
 
+    private void UpdateAccountButton()
+    {
+        _accountButton.Text = _settings.Login is { } login ? $"👤 {login.Username}" : "Войти";
+    }
+
     private void ShowTab(Tab tab)
     {
         _tab = tab;
-        foreach (var (t, b) in _tabButtons)
+        foreach (var (t, view) in _tabButtons)
         {
-            b.Background = Ui.Rounded(this, t == tab ? Ui.Accent : Ui.Panel);
-            b.SetTextColor(t == tab ? Ui.Bg : Ui.Text);
+            view.Background = t == tab
+                ? Ui.Angle(this, Ui.ControlHigh, 8)
+                : Ui.AngleStates(this, Ui.Bg, Ui.Hovered, 8);
+            view.SetTextColor(t == tab ? Ui.Text : Ui.Muted);
+            view.Typeface = t == tab ? Ui.Bold(this) : Ui.Regular(this);
         }
 
         _content.RemoveAllViews();
         _content.AddView(tab switch
         {
+            Tab.Home => BuildHomeTab(),
             Tab.Servers => BuildServersTab(),
-            Tab.Favorites => BuildFavoritesTab(),
-            Tab.Account => BuildAccountTab(),
+            Tab.Game => BuildGameTab(),
             _ => BuildSettingsTab(),
         });
     }
 
-    // ------------------------------------------------------------------ Servers
+    private ListView MakeServerList(ServerAdapter adapter)
+    {
+        var list = new ListView(this) { DividerHeight = 0 };
+        list.SetBackgroundColor(Ui.ListRowA);
+        list.Adapter = adapter;
+        list.ItemClick += (_, e) => ShowServerDialog(adapter[e.Position]);
+        return list;
+    }
+
+    // ------------------------------------------------------------------ Home (favorites)
+
+    private View BuildHomeTab()
+    {
+        var col = Ui.Column(this, 12);
+
+        var top = Ui.Row(this);
+        top.AddView(Ui.Heading(this, "Избранные серверы"), Ui.Fill(1));
+        col.AddView(top);
+
+        if (_settings.Favorites.Count == 0)
+        {
+            var empty = Ui.Label(this,
+                "Здесь будут ваши избранные серверы.\nДобавьте сервер со вкладки «Серверы» или по адресу.", 15, Ui.Muted);
+            empty.SetPadding(0, Ui.Dp(this, 16), 0, Ui.Dp(this, 16));
+            col.AddView(empty);
+            var spacer = new View(this);
+            col.AddView(spacer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1));
+        }
+        else
+        {
+            var adapter = new ServerAdapter(this);
+            adapter.SetItems(_settings.Favorites.Select(f => new ServerItem(f.Address, f.Name, -1, 0)).ToList());
+            var list = MakeServerList(adapter);
+            var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1) { TopMargin = Ui.Dp(this, 8) };
+            col.AddView(list, lp);
+
+            // Refresh player counts in the background.
+            _ = Task.Run(async () =>
+            {
+                var api = new ServerApi(Http);
+                var items = new List<ServerItem>();
+                foreach (var f in _settings.Favorites.ToList())
+                {
+                    try
+                    {
+                        var s = await api.GetStatusAsync(ServerAddress.Parse(f.Address));
+                        items.Add(new ServerItem(f.Address, s.Name ?? f.Name, s.Players, s.SoftMaxPlayers));
+                    }
+                    catch
+                    {
+                        items.Add(new ServerItem(f.Address, f.Name, -2, 0));
+                    }
+                }
+
+                RunOnUiThread(() => adapter.SetItems(items));
+            });
+        }
+
+        var buttons = Ui.Row(this);
+        buttons.AddView(Ui.Button(this, "Прямое подключение", AskDirectConnect), Ui.Fill(1));
+        var addLp = Ui.Fill(1);
+        addLp.LeftMargin = Ui.Dp(this, 8);
+        buttons.AddView(Ui.Button(this, "Добавить сервер", AskAddFavorite), addLp);
+        col.AddView(buttons, Ui.Fill(0, 10, this));
+        return col;
+    }
+
+    // ------------------------------------------------------------------ Servers (hub)
 
     private View BuildServersTab()
     {
         var col = Ui.Column(this, 12);
 
         var top = Ui.Row(this);
-        var search = Ui.Input(this, "Поиск сервера", _filter);
+        var search = Ui.Input(this, "Поиск серверов", _filter);
         top.AddView(search, Ui.Fill(1));
-        var refresh = Ui.Button(this, "⟳", () => _ = LoadHubAsync(true));
-        top.AddView(refresh, Ui.Wrap(8, this));
+        top.AddView(Ui.Button(this, "⟳", () => _ = LoadHubAsync(true)), Ui.Wrap(8, this));
         col.AddView(top);
 
-        var direct = Ui.Button(this, "Подключиться по адресу…", AskDirectConnect);
-        col.AddView(direct, Ui.Fill(0, 8, this));
-
+        var filters = Ui.Row(this);
+        var hideEmpty = Ui.Check(this, "Скрыть пустые", _hideEmpty);
+        filters.AddView(hideEmpty, Ui.Fill(1));
         var status = Ui.Label(this, "", 13, Ui.Muted);
-        col.AddView(status, Ui.Fill(0, 6, this));
+        filters.AddView(status, Ui.Wrap());
+        col.AddView(filters, Ui.Fill(0, 4, this));
 
-        var list = new ListView(this) { DividerHeight = Ui.Dp(this, 6) };
-        list.Divider = new global::Android.Graphics.Drawables.ColorDrawable(global::Android.Graphics.Color.Transparent);
         var adapter = new ServerAdapter(this);
-        list.Adapter = adapter;
-        list.ItemClick += (_, e) => ShowServerDialog(adapter[e.Position]);
+        var list = MakeServerList(adapter);
         col.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1));
 
         void Apply()
@@ -149,17 +246,25 @@ public sealed class MainActivity : Activity
                 .Where(s => f.Length == 0
                             || (s.StatusData?.Name ?? "").Contains(f, StringComparison.OrdinalIgnoreCase)
                             || s.Address.Contains(f, StringComparison.OrdinalIgnoreCase))
+                .Where(s => !_hideEmpty || (s.StatusData?.Players ?? 0) > 0)
                 .OrderByDescending(s => s.StatusData?.Players ?? 0)
                 .Select(s => new ServerItem(s.Address, s.StatusData?.Name ?? s.Address, s.StatusData?.Players ?? 0,
                     s.StatusData?.SoftMaxPlayers ?? 0))
                 .ToList();
             adapter.SetItems(items);
-            status.Text = _hubServers.Count == 0 ? "Загрузка списка серверов…" : $"Серверов: {items.Count}";
+            status.Text = _hubServers.Count == 0
+                ? "Получение списка серверов…"
+                : $"Серверов: {items.Count} / {_hubServers.Count}";
         }
 
         search.TextChanged += (_, _) =>
         {
             _filter = search.Text ?? "";
+            Apply();
+        };
+        hideEmpty.CheckedChange += (_, e) =>
+        {
+            _hideEmpty = e.IsChecked;
             Apply();
         };
 
@@ -182,7 +287,8 @@ public sealed class MainActivity : Activity
         }
         catch (Exception e)
         {
-            Toast.MakeText(this, $"Не удалось загрузить список: {e.Message}", ToastLength.Long)!.Show();
+            RunOnUiThread(() =>
+                Toast.MakeText(this, $"Не удалось получить список серверов: {e.Message}", ToastLength.Long)!.Show());
         }
 
         RunOnUiThread(() =>
@@ -196,9 +302,9 @@ public sealed class MainActivity : Activity
     {
         var input = Ui.Input(this, "ss14://адрес:порт");
         var wrap = Ui.Column(this, 16);
-        wrap.AddView(input);
-        new AlertDialog.Builder(this)
-            .SetTitle("Адрес сервера")!
+        wrap.AddView(Ui.Label(this, "Введите адрес сервера для подключения:", 14, Ui.Muted));
+        wrap.AddView(input, Ui.Fill(0, 8, this));
+        Ui.Dialog(this, "Прямое подключение")
             .SetView(wrap)!
             .SetPositiveButton("Подключиться", (_, _) =>
             {
@@ -206,13 +312,31 @@ public sealed class MainActivity : Activity
                 if (ServerAddress.TryParse(text, out var addr))
                     Connect(addr, text);
                 else
-                    Toast.MakeText(this, "Неверный адрес", ToastLength.Short)!.Show();
+                    Toast.MakeText(this, "Неправильный адрес", ToastLength.Short)!.Show();
             })!
-            .SetNeutralButton("В избранное", (_, _) =>
+            .SetNegativeButton("Отмена", (_, _) => { })!
+            .Show();
+    }
+
+    private void AskAddFavorite()
+    {
+        var name = Ui.Input(this, "Название");
+        var address = Ui.Input(this, "ss14://адрес:порт");
+        var wrap = Ui.Column(this, 16);
+        wrap.AddView(name);
+        wrap.AddView(address, Ui.Fill(0, 8, this));
+        Ui.Dialog(this, "Добавить в избранное")
+            .SetView(wrap)!
+            .SetPositiveButton("Добавить", (_, _) =>
             {
-                var text = input.Text ?? "";
-                if (ServerAddress.TryParse(text, out _))
-                    AddFavorite(text, text);
+                var text = address.Text ?? "";
+                if (!ServerAddress.TryParse(text, out _))
+                {
+                    Toast.MakeText(this, "Неправильный адрес", ToastLength.Short)!.Show();
+                    return;
+                }
+
+                AddFavorite(text, string.IsNullOrWhiteSpace(name.Text) ? text : name.Text!);
             })!
             .SetNegativeButton("Отмена", (_, _) => { })!
             .Show();
@@ -223,12 +347,13 @@ public sealed class MainActivity : Activity
         var isFav = _settings.Favorites.Any(f => f.Address == item.Address);
         var body = Ui.Column(this, 20);
         body.AddView(Ui.Label(this, item.Address, 13, Ui.Muted));
-        var info = Ui.Label(this, "Запрос информации…", 14, Ui.Muted);
+        var info = Ui.Label(this, "Получение информации о сервере…", 14, Ui.Text);
         body.AddView(info, Ui.Fill(0, 8, this));
+        var scroll = new ScrollView(this);
+        scroll.AddView(body);
 
-        var dialog = new AlertDialog.Builder(this)
-            .SetTitle(item.Name)!
-            .SetView(body)!
+        var dialog = Ui.Dialog(this, item.Name)
+            .SetView(scroll)!
             .SetPositiveButton("Подключиться", (_, _) =>
             {
                 if (ServerAddress.TryParse(item.Address, out var addr))
@@ -264,13 +389,14 @@ public sealed class MainActivity : Activity
                 };
                 text = $"Игроков: {status.Players}/{status.SoftMaxPlayers}\n" +
                        (status.Map != null ? $"Карта: {status.Map}\n" : "") +
+                       (status.Preset != null ? $"Режим: {status.Preset}\n" : "") +
                        $"Движок: {ver} — {engineText}\n" +
                        $"Вход: {AuthText(srvInfo.Auth?.Mode)}" +
                        (string.IsNullOrWhiteSpace(srvInfo.Description) ? "" : $"\n\n{srvInfo.Description}");
             }
             catch (Exception e)
             {
-                text = $"Сервер недоступен: {e.Message}";
+                text = $"Не удалось связаться с сервером: {e.Message}";
             }
 
             RunOnUiThread(() =>
@@ -288,52 +414,6 @@ public sealed class MainActivity : Activity
         _ => "аккаунт или гость",
     };
 
-    // ------------------------------------------------------------------ Favorites
-
-    private View BuildFavoritesTab()
-    {
-        var col = Ui.Column(this, 12);
-        if (_settings.Favorites.Count == 0)
-        {
-            col.AddView(Ui.Label(this,
-                "Избранных серверов пока нет.\nДобавьте сервер из списка или по адресу.", 15, Ui.Muted));
-            col.AddView(Ui.Button(this, "Добавить по адресу…", AskDirectConnect), Ui.Fill(0, 12, this));
-            return col;
-        }
-
-        var list = new ListView(this) { DividerHeight = Ui.Dp(this, 6) };
-        list.Divider = new global::Android.Graphics.Drawables.ColorDrawable(global::Android.Graphics.Color.Transparent);
-        var adapter = new ServerAdapter(this);
-        adapter.SetItems(_settings.Favorites.Select(f => new ServerItem(f.Address, f.Name, -1, 0)).ToList());
-        list.Adapter = adapter;
-        list.ItemClick += (_, e) => ShowServerDialog(adapter[e.Position]);
-        col.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1));
-        col.AddView(Ui.Button(this, "Добавить по адресу…", AskDirectConnect), Ui.Fill(0, 8, this));
-
-        // Refresh player counts in the background.
-        _ = Task.Run(async () =>
-        {
-            var api = new ServerApi(Http);
-            var items = new List<ServerItem>();
-            foreach (var f in _settings.Favorites.ToList())
-            {
-                try
-                {
-                    var s = await api.GetStatusAsync(ServerAddress.Parse(f.Address));
-                    items.Add(new ServerItem(f.Address, s.Name ?? f.Name, s.Players, s.SoftMaxPlayers));
-                }
-                catch
-                {
-                    items.Add(new ServerItem(f.Address, f.Name, -2, 0));
-                }
-            }
-
-            RunOnUiThread(() => adapter.SetItems(items));
-        });
-
-        return col;
-    }
-
     private void AddFavorite(string address, string name)
     {
         if (_settings.Favorites.All(f => f.Address != address))
@@ -343,45 +423,262 @@ public sealed class MainActivity : Activity
         }
 
         Toast.MakeText(this, "Добавлено в избранное", ToastLength.Short)!.Show();
-        if (_tab == Tab.Favorites) ShowTab(Tab.Favorites);
+        if (_tab == Tab.Home) ShowTab(Tab.Home);
     }
 
     private void RemoveFavorite(string address)
     {
         _settings.Favorites.RemoveAll(f => f.Address == address);
         _settings.Save(FilesPath);
-        if (_tab == Tab.Favorites) ShowTab(Tab.Favorites);
+        if (_tab == Tab.Home) ShowTab(Tab.Home);
     }
 
-    // ------------------------------------------------------------------ Account
+    // ------------------------------------------------------------------ Game settings
 
-    private View BuildAccountTab()
+    /// <summary>Options section box: gold heading, then rows separated by thin lines.</summary>
+    private LinearLayout Section(LinearLayout parent, string title)
+    {
+        parent.AddView(Ui.Heading(this, title), Ui.Fill(0, 18, this));
+        var box = Ui.Column(this, 12);
+        box.Background = Ui.Angle(this, Ui.ListRowA, 10);
+        parent.AddView(box, Ui.Fill(0, 6, this));
+        return box;
+    }
+
+    private View BuildGameTab()
     {
         var scroll = new ScrollView(this);
-        var col = Ui.Column(this, 16);
+        var col = Ui.Column(this, 14);
         scroll.AddView(col);
 
-        if (_settings.Login is { } login)
+        col.AddView(Ui.Label(this,
+            "Эти настройки применяются при входе на любой сервер. Изменённые здесь параметры заменяют " +
+            "настройки из меню игры.", 13, Ui.Muted));
+
+        // UI scale (launcher-specific, always sent).
+        var ui = Section(col, "Масштаб интерфейса");
+        var scales = new[] { 0f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f };
+        var scaleNames = scales.Select(s => s == 0 ? $"Авто ({DefaultUiScale():0.##}×)" : $"{s:0.##}×").ToArray();
+        ui.AddView(ChoiceRow("Масштаб", scaleNames, Math.Max(0, Array.IndexOf(scales, _settings.UiScale)), i =>
         {
-            col.AddView(Ui.Label(this, "Вы вошли как", 14, Ui.Muted));
-            col.AddView(Ui.Label(this, login.Username, 22, bold: true));
-            col.AddView(Ui.Label(this, $"Вход действителен до {login.ExpireTime.LocalDateTime:g}", 13, Ui.Muted),
-                Ui.Fill(0, 4, this));
-            col.AddView(Ui.Button(this, "Выйти", () => _ = LogoutAsync()), Ui.Fill(0, 16, this));
-            return scroll;
+            _settings.UiScale = scales[i];
+            _settings.Save(FilesPath);
+        }));
+
+        foreach (var section in GameSettings.All.GroupBy(o => o.Section))
+        {
+            var box = Section(col, section.Key);
+            var first = true;
+            foreach (var o in section)
+            {
+                if (!first)
+                    box.AddView(Ui.Separator(this), Ui.Fill(0, 6, this));
+                first = false;
+                box.AddView(OptionView(o));
+            }
         }
 
-        col.AddView(Ui.Label(this, "Аккаунт Space Station 14", 18, bold: true));
-        col.AddView(Ui.Label(this, "Тот же аккаунт, что и в обычном лаунчере.", 13, Ui.Muted), Ui.Fill(0, 4, this));
-        var user = Ui.Input(this, "Логин или e-mail");
+        col.AddView(Ui.Button(this, "Сбросить игровые настройки", () =>
+        {
+            _settings.GameCVars.Clear();
+            _settings.UiScale = 0;
+            _settings.Save(FilesPath);
+            ShowTab(Tab.Game);
+        }), Ui.Fill(0, 20, this));
+        return scroll;
+    }
+
+    private View ChoiceRow(string title, string[] names, int selected, Action<int> changed)
+    {
+        var row = Ui.Row(this);
+        row.SetPadding(0, Ui.Dp(this, 4), 0, Ui.Dp(this, 4));
+        row.AddView(Ui.Label(this, title, 15), Ui.Fill(1));
+        var spinner = new Spinner(this, SpinnerMode.Dropdown);
+        var adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerItem, names);
+        adapter.SetDropDownViewResource(global::Android.Resource.Layout.SimpleSpinnerDropDownItem);
+        spinner.Adapter = adapter;
+        spinner.SetSelection(selected);
+        spinner.Background = Ui.Angle(this, Ui.ControlMid, 8);
+        spinner.SetPopupBackgroundDrawable(Ui.Angle(this, Ui.PopupBg, 8));
+        spinner.ItemSelected += (_, e) =>
+        {
+            if (e.View is TextView tv)
+                tv.SetTextColor(Ui.Text);
+            changed(e.Position);
+        };
+        row.AddView(spinner, Ui.Wrap(8, this));
+        return row;
+    }
+
+    private View OptionView(GameSettings.Option o)
+    {
+        var col = Ui.Column(this);
+        var value = GameSettings.Get(_settings, o);
+
+        void Save(string v)
+        {
+            GameSettings.Set(_settings, o, v);
+            _settings.Save(FilesPath);
+        }
+
+        switch (o.Kind)
+        {
+            case GameSettings.Kind.Toggle:
+            {
+                var c = Ui.Check(this, o.Title, value == "true");
+                c.CheckedChange += (_, e) => Save(e.IsChecked ? "true" : "false");
+                col.AddView(c);
+                break;
+            }
+            case GameSettings.Kind.Choice:
+            {
+                var choices = o.Choices!;
+                var idx = Math.Max(0, Array.FindIndex(choices, c => c.Value == value));
+                col.AddView(ChoiceRow(o.Title, choices.Select(c => c.Label).ToArray(), idx, i => Save(choices[i].Value)));
+                break;
+            }
+            case GameSettings.Kind.Slider:
+            {
+                var steps = (int)Math.Round((o.Max - o.Min) / o.Step);
+                string Show(float v) => o.Percent ? $"{v * 100:0}%" : GameSettings.Format(v);
+                var current = Math.Clamp(GameSettings.ParseFloat(value), o.Min, o.Max);
+                var label = Ui.Label(this, $"{o.Title}: {Show(current)}", 15);
+                col.AddView(label);
+                var slider = Ui.Slider(this, steps, (int)Math.Round((current - o.Min) / o.Step));
+                slider.ProgressChanged += (_, e) =>
+                {
+                    var v = o.Min + e.Progress * o.Step;
+                    label.Text = $"{o.Title}: {Show(v)}";
+                    if (e.FromUser)
+                        Save(GameSettings.Format(v));
+                };
+                col.AddView(slider);
+                break;
+            }
+        }
+
+        if (o.Description != null)
+            col.AddView(Ui.Label(this, o.Description, 12, Ui.Muted));
+        return col;
+    }
+
+    // ------------------------------------------------------------------ Settings (account + launcher)
+
+    private View BuildSettingsTab()
+    {
+        var scroll = new ScrollView(this);
+        var col = Ui.Column(this, 14);
+        scroll.AddView(col);
+
+        BuildAccountSection(Section(col, "Аккаунт"));
+
+        var touch = Section(col, "Сенсорное управление");
+        var touchOn = Ui.Check(this, "Показывать джойстик и кнопки", _settings.TouchControls);
+        touchOn.CheckedChange += (_, e) =>
+        {
+            _settings.TouchControls = e.IsChecked;
+            _settings.Save(FilesPath);
+        };
+        touch.AddView(touchOn);
+        var opacityLabel = Ui.Label(this, $"Непрозрачность кнопок: {_settings.TouchOpacity}%", 15);
+        touch.AddView(opacityLabel, Ui.Fill(0, 8, this));
+        var opacity = Ui.Slider(this, 100, _settings.TouchOpacity);
+        opacity.ProgressChanged += (_, e) =>
+        {
+            _settings.TouchOpacity = Math.Max(15, e.Progress);
+            opacityLabel.Text = $"Непрозрачность кнопок: {_settings.TouchOpacity}%";
+            _settings.Save(FilesPath);
+        };
+        touch.AddView(opacity);
+        var sizeLabel = Ui.Label(this, $"Размер кнопок: {_settings.TouchScale:0.0}×", 15);
+        touch.AddView(sizeLabel, Ui.Fill(0, 8, this));
+        var size = Ui.Slider(this, 10, (int)Math.Round((_settings.TouchScale - 0.5f) * 10));
+        size.ProgressChanged += (_, e) =>
+        {
+            _settings.TouchScale = 0.5f + e.Progress / 10f;
+            sizeLabel.Text = $"Размер кнопок: {_settings.TouchScale:0.0}×";
+            _settings.Save(FilesPath);
+        };
+        touch.AddView(size);
+
+        var hub = Section(col, "Настройки хаба");
+        hub.AddView(Ui.Label(this, "Сервер, с которого загружается список серверов.", 13, Ui.Muted));
+        var hubUrl = Ui.Input(this, ServerApi.DefaultHubUrl, _settings.HubUrl);
+        hubUrl.TextChanged += (_, _) =>
+        {
+            _settings.HubUrl = string.IsNullOrWhiteSpace(hubUrl.Text) ? ServerApi.DefaultHubUrl : hubUrl.Text!.Trim();
+            _settings.Save(FilesPath);
+        };
+        hub.AddView(hubUrl, Ui.Fill(0, 6, this));
+
+        var engine = Section(col, "Движок");
+        engine.AddView(Ui.Label(this, "Откуда скачивать Android-сборки движка (релизы GitHub).", 13, Ui.Muted));
+        var engineUrl = Ui.Input(this, EngineManager.DefaultReleaseBase, _settings.EngineReleaseBase);
+        engineUrl.TextChanged += (_, _) =>
+        {
+            _settings.EngineReleaseBase = string.IsNullOrWhiteSpace(engineUrl.Text)
+                ? EngineManager.DefaultReleaseBase
+                : engineUrl.Text!.Trim();
+            _settings.Save(FilesPath);
+        };
+        engine.AddView(engineUrl, Ui.Fill(0, 6, this));
+
+        var data = Section(col, "Данные");
+        data.AddView(Ui.Button(this, "Удалить установленные движки", () =>
+            ClearDirs("Движки удалены", System.IO.Path.Combine(CachePath, "engines"),
+                System.IO.Path.Combine(FilesPath, "runtimes"))));
+        data.AddView(Ui.Button(this, "Удалить контент серверов", () =>
+            ClearDirs("Контент удалён", System.IO.Path.Combine(CachePath, "content"))), Ui.Fill(0, 8, this));
+        data.AddView(Ui.Button(this, "Лог последней игры", ShowGameLog), Ui.Fill(0, 8, this));
+
+        var info = Ui.Label(this, $"Версия лаунчера: {PackageManager!.GetPackageInfo(PackageName!, 0)!.VersionName}", 12, Ui.Disabled);
+        col.AddView(info, Ui.Fill(0, 18, this));
+        return scroll;
+    }
+
+    private void ClearDirs(string done, params string[] dirs)
+    {
+        try
+        {
+            foreach (var p in dirs)
+            {
+                if (Directory.Exists(p)) Directory.Delete(p, true);
+            }
+
+            Toast.MakeText(this, done, ToastLength.Short)!.Show();
+        }
+        catch (Exception e)
+        {
+            Toast.MakeText(this, e.Message, ToastLength.Long)!.Show();
+        }
+    }
+
+    private void BuildAccountSection(LinearLayout box)
+    {
+        if (_settings.Login is { } login)
+        {
+            box.AddView(Ui.Label(this, "Вы вошли как", 13, Ui.Muted));
+            box.AddView(Ui.Label(this, login.Username, 20, bold: true));
+            box.AddView(Ui.Label(this, $"Вход действителен до {login.ExpireTime.LocalDateTime:g}", 12, Ui.Muted));
+            var row = Ui.Row(this);
+            row.AddView(Ui.Button(this, "Выйти", () => _ = LogoutAsync()), Ui.Fill(1));
+            var lp = Ui.Fill(1);
+            lp.LeftMargin = Ui.Dp(this, 8);
+            row.AddView(Ui.Button(this, "Настройки аккаунта", OpenAccountSite), lp);
+            box.AddView(row, Ui.Fill(0, 10, this));
+            return;
+        }
+
+        box.AddView(Ui.Label(this, "Тот же аккаунт, что и в обычном лаунчере Space Station 14.", 13, Ui.Muted));
+        var user = Ui.Input(this, "Имя пользователя или e-mail");
         var pass = Ui.Input(this, "Пароль", password: true);
-        var tfa = Ui.Input(this, "Код двухфакторной аутентификации");
+        var tfa = Ui.Input(this, "Код аутентификации");
         tfa.Visibility = ViewStates.Gone;
         var error = Ui.Label(this, "", 14, Ui.Bad);
-        col.AddView(user, Ui.Fill(0, 12, this));
-        col.AddView(pass, Ui.Fill(0, 8, this));
-        col.AddView(tfa, Ui.Fill(0, 8, this));
-        col.AddView(error, Ui.Fill(0, 8, this));
+        box.AddView(user, Ui.Fill(0, 10, this));
+        box.AddView(pass, Ui.Fill(0, 8, this));
+        box.AddView(tfa, Ui.Fill(0, 8, this));
+        box.AddView(error, Ui.Fill(0, 6, this));
 
         Button? loginBtn = null;
         loginBtn = Ui.Button(this, "Войти", async () =>
@@ -396,18 +693,26 @@ public sealed class MainActivity : Activity
                 {
                     _settings.Login = res.Info;
                     _settings.Save(FilesPath);
-                    ShowTab(Tab.Account);
+                    UpdateAccountButton();
+                    ShowTab(Tab.Settings);
                     return;
                 }
 
                 if (res.Code == AuthDenyCode.TfaRequired)
                 {
                     tfa.Visibility = ViewStates.Visible;
-                    error.Text = "Введите код двухфакторной аутентификации.";
+                    error.Text = "Требуется двухфакторная аутентификация";
                 }
                 else
                 {
-                    error.Text = string.Join("\n", res.Errors);
+                    error.Text = res.Code switch
+                    {
+                        AuthDenyCode.InvalidCredentials => "Неправильные данные для входа",
+                        AuthDenyCode.TfaInvalid => "Неправильный код двухфакторной аутентификации",
+                        AuthDenyCode.AccountUnconfirmed => "E-mail адрес аккаунта ещё не подтверждён",
+                        AuthDenyCode.AccountLocked => "Аккаунт заблокирован",
+                        _ => string.Join("\n", res.Errors),
+                    };
                 }
             }
             catch (Exception e)
@@ -419,19 +724,31 @@ public sealed class MainActivity : Activity
                 loginBtn!.Enabled = true;
             }
         }, primary: true);
-        col.AddView(loginBtn, Ui.Fill(0, 12, this));
+        box.AddView(loginBtn, Ui.Fill(0, 6, this));
+        box.AddView(Ui.Button(this, "Регистрация / забыли пароль", OpenAccountSite), Ui.Fill(0, 8, this));
 
-        col.AddView(Ui.Label(this, "Или играйте гостем", 16, bold: true), Ui.Fill(0, 28, this));
-        col.AddView(Ui.Label(this, "Работает на серверах, где вход в аккаунт не обязателен.", 13, Ui.Muted),
-            Ui.Fill(0, 4, this));
+        box.AddView(Ui.Separator(this), Ui.Fill(0, 14, this));
+        box.AddView(Ui.Label(this, "Или играйте гостем — на серверах, где вход не обязателен.", 13, Ui.Muted),
+            Ui.Fill(0, 10, this));
         var guest = Ui.Input(this, "Имя гостя (необязательно)", _settings.GuestName);
         guest.TextChanged += (_, _) =>
         {
             _settings.GuestName = guest.Text ?? "";
             _settings.Save(FilesPath);
         };
-        col.AddView(guest, Ui.Fill(0, 8, this));
-        return scroll;
+        box.AddView(guest, Ui.Fill(0, 6, this));
+    }
+
+    private void OpenAccountSite()
+    {
+        try
+        {
+            StartActivity(new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(AccountSiteUrl)));
+        }
+        catch (Exception e)
+        {
+            Toast.MakeText(this, e.Message, ToastLength.Short)!.Show();
+        }
     }
 
     private async Task LogoutAsync()
@@ -450,110 +767,8 @@ public sealed class MainActivity : Activity
 
         _settings.Login = null;
         _settings.Save(FilesPath);
-        ShowTab(Tab.Account);
-    }
-
-    // ------------------------------------------------------------------ Settings
-
-    private View BuildSettingsTab()
-    {
-        var scroll = new ScrollView(this);
-        var col = Ui.Column(this, 16);
-        scroll.AddView(col);
-
-        col.AddView(Ui.Label(this, "Масштаб интерфейса игры", 16, bold: true));
-        var scales = new[] { 0f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f };
-        var scaleNames = scales.Select(s => s == 0 ? $"Авто ({DefaultUiScale():0.##})" : $"{s:0.##}×").ToArray();
-        var spinner = new Spinner(this)
-        {
-            Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem, scaleNames)
-        };
-        spinner.SetSelection(Math.Max(0, Array.IndexOf(scales, _settings.UiScale)));
-        spinner.Background = Ui.Rounded(this, Ui.Panel, 8);
-        spinner.ItemSelected += (_, e) =>
-        {
-            _settings.UiScale = scales[e.Position];
-            _settings.Save(FilesPath);
-        };
-        col.AddView(spinner, Ui.Fill(0, 6, this));
-
-        col.AddView(Ui.Label(this, "Сенсорное управление", 16, bold: true), Ui.Fill(0, 20, this));
-        var touch = new Switch(this) { Text = "Показывать кнопки и джойстик", Checked = _settings.TouchControls };
-        touch.SetTextColor(Ui.Text);
-        touch.CheckedChange += (_, e) =>
-        {
-            _settings.TouchControls = e.IsChecked;
-            _settings.Save(FilesPath);
-        };
-        col.AddView(touch, Ui.Fill(0, 6, this));
-
-        var opacityLabel = Ui.Label(this, $"Прозрачность кнопок: {_settings.TouchOpacity}%", 14, Ui.Muted);
-        col.AddView(opacityLabel, Ui.Fill(0, 10, this));
-        var opacity = new SeekBar(this) { Max = 100, Progress = _settings.TouchOpacity };
-        opacity.ProgressChanged += (_, e) =>
-        {
-            _settings.TouchOpacity = Math.Max(15, e.Progress);
-            opacityLabel.Text = $"Прозрачность кнопок: {_settings.TouchOpacity}%";
-            _settings.Save(FilesPath);
-        };
-        col.AddView(opacity);
-
-        var sizeLabel = Ui.Label(this, $"Размер кнопок: {_settings.TouchScale:0.0}×", 14, Ui.Muted);
-        col.AddView(sizeLabel, Ui.Fill(0, 10, this));
-        var size = new SeekBar(this) { Max = 10, Progress = (int)Math.Round((_settings.TouchScale - 0.5f) * 10) };
-        size.ProgressChanged += (_, e) =>
-        {
-            _settings.TouchScale = 0.5f + e.Progress / 10f;
-            sizeLabel.Text = $"Размер кнопок: {_settings.TouchScale:0.0}×";
-            _settings.Save(FilesPath);
-        };
-        col.AddView(size);
-
-        col.AddView(Ui.Label(this, "Источник сборок движка", 16, bold: true), Ui.Fill(0, 20, this));
-        col.AddView(Ui.Label(this, "Откуда скачивать Android-сборки движка (релизы GitHub).", 13, Ui.Muted));
-        var engineUrl = Ui.Input(this, EngineManager.DefaultReleaseBase, _settings.EngineReleaseBase);
-        engineUrl.TextChanged += (_, _) =>
-        {
-            _settings.EngineReleaseBase = string.IsNullOrWhiteSpace(engineUrl.Text)
-                ? EngineManager.DefaultReleaseBase
-                : engineUrl.Text!.Trim();
-            _settings.Save(FilesPath);
-        };
-        col.AddView(engineUrl, Ui.Fill(0, 6, this));
-
-        col.AddView(Ui.Label(this, "Хаб серверов", 16, bold: true), Ui.Fill(0, 20, this));
-        var hubUrl = Ui.Input(this, ServerApi.DefaultHubUrl, _settings.HubUrl);
-        hubUrl.TextChanged += (_, _) =>
-        {
-            _settings.HubUrl = string.IsNullOrWhiteSpace(hubUrl.Text) ? ServerApi.DefaultHubUrl : hubUrl.Text!.Trim();
-            _settings.Save(FilesPath);
-        };
-        col.AddView(hubUrl, Ui.Fill(0, 6, this));
-
-        col.AddView(Ui.Button(this, "Лог последней игры", ShowGameLog), Ui.Fill(0, 24, this));
-
-        col.AddView(Ui.Button(this, "Очистить кэш (движки, среды .NET, контент)", () =>
-        {
-            try
-            {
-                foreach (var p in new[]
-                         {
-                             System.IO.Path.Combine(CachePath, "engines"), System.IO.Path.Combine(CachePath, "content"),
-                             System.IO.Path.Combine(FilesPath, "runtimes"),
-                         })
-                {
-                    if (Directory.Exists(p)) Directory.Delete(p, true);
-                }
-
-                Toast.MakeText(this, "Кэш очищен", ToastLength.Short)!.Show();
-            }
-            catch (Exception e)
-            {
-                Toast.MakeText(this, e.Message, ToastLength.Long)!.Show();
-            }
-        }), Ui.Fill(0, 24, this));
-
-        return scroll;
+        UpdateAccountButton();
+        ShowTab(Tab.Settings);
     }
 
     /// <summary>Phones have small, dense screens: scale UI so the game is readable at ~720p logical height.</summary>
@@ -578,7 +793,7 @@ public sealed class MainActivity : Activity
         body.AddView(stage);
         body.AddView(bar, Ui.Fill(0, 12, this));
 
-        var dialog = new AlertDialog.Builder(this)
+        var dialog = new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
             .SetTitle($"Подключение: {name}")!
             .SetView(body)!
             .SetCancelable(false)!
@@ -615,7 +830,7 @@ public sealed class MainActivity : Activity
                 RunOnUiThread(() =>
                 {
                     dialog.Dismiss();
-                    new AlertDialog.Builder(this)
+                    new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
                         .SetTitle("Не удалось подключиться")!
                         .SetMessage(e is UserFacingException ? e.Message : $"{e.GetType().Name}: {e.Message}")!
                         .SetPositiveButton("OK", (_, _) => { })!
@@ -630,7 +845,7 @@ public sealed class MainActivity : Activity
         var tcs = new TaskCompletionSource<bool>();
         RunOnUiThread(() =>
         {
-            new AlertDialog.Builder(this)
+            new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
                 .SetTitle("Режим совместимости")!
                 .SetMessage(
                     $"Для движка {engineVersion} нет Android-сборки. Можно запустить официальную сборку этой версии, " +
@@ -686,7 +901,7 @@ public sealed class MainActivity : Activity
         var scroll = new ScrollView(this);
         scroll.AddView(view);
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
             .SetTitle("Лог последней игры")!
             .SetView(scroll)!
             .SetPositiveButton("Закрыть", (_, _) => { })!
@@ -761,7 +976,7 @@ public sealed class MainActivity : Activity
         if (log.Contains("Game host exited with 0") || File.Exists(CrashFile))
             return;
 
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
             .SetTitle("Игра неожиданно закрылась")!
             .SetMessage("Похоже, процесс игры аварийно завершился (без ошибки .NET). Лог поможет понять причину — его можно скопировать или отправить.")!
             .SetPositiveButton("Показать лог", (_, _) => ShowGameLog())!
@@ -805,7 +1020,7 @@ public sealed class MainActivity : Activity
 
         var text = File.ReadAllText(path);
         File.Delete(path);
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, Resource.Style.LauncherDialog)
             .SetTitle("Игра завершилась с ошибкой")!
             .SetMessage(text.Length > 4000 ? text[..4000] + "…" : text)!
             .SetPositiveButton("OK", (_, _) => { })!

@@ -20,6 +20,8 @@ public sealed class LauncherSettings
     public bool TouchControls { get; set; } = true;
     public int TouchOpacity { get; set; } = 60;
     public float TouchScale { get; set; } = 1f;
+    /// <summary>In-game settings chosen in the launcher (only those changed from the game's defaults).</summary>
+    public Dictionary<string, string> GameCVars { get; set; } = new();
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 

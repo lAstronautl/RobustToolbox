@@ -109,6 +109,8 @@ public sealed class Connector
         {
             $"display.uiScale={uiScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
         };
+        // Game settings from the launcher's "Игра" tab; last wins, so they override the Android defaults.
+        cvars.AddRange(GameSettings.ToCVars(_settings));
 
         var spec = new GameLaunchSpec
         {

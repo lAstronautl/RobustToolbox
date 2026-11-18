@@ -16,8 +16,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationId>com.starhorizon.launcher</ApplicationId>
     <ApplicationTitle>StarHorizon</ApplicationTitle>
-    <ApplicationVersion>12</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.11</ApplicationDisplayVersion>
+    <ApplicationVersion>13</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RootNamespace>Robust.Client.Android</RootNamespace>
