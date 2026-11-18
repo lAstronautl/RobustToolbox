@@ -224,6 +224,20 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
         free(p);
     }
 
+    // The APK also contains libSystem.*.so of the app's own .NET version, and the dynamic linker finds those
+    // first when the runtime loads them by name. Preload ours by full path: later loads by name then match
+    // the already-loaded library (same soname) instead of the APK copy.
+    const char *runtime_natives[] = {"libSystem.Native.so", "libSystem.IO.Compression.Native.so",
+                                     "libSystem.Globalization.Native.so",
+                                     "libSystem.Security.Cryptography.Native.Android.so"};
+    for (size_t i = 0; i < sizeof(runtime_natives) / sizeof(runtime_natives[0]); i++)
+    {
+        char *p = join_path(native_dir, runtime_natives[i]);
+        if (access(p, R_OK) == 0 && !dlopen(p, RTLD_NOW | RTLD_GLOBAL))
+            LOGE("dlopen %s: %s", p, dlerror());
+        free(p);
+    }
+
     LOAD_SYM(monovm_initialize, monovm_initialize_fn, "monovm_initialize")
     LOAD_SYM(mono_jit_init_version, mono_jit_init_version_fn, "mono_jit_init_version")
     LOAD_SYM(mono_domain_assembly_open, mono_domain_assembly_open_fn, "mono_domain_assembly_open")
