@@ -155,6 +155,15 @@ static char *build_tpa(const char *dir, const char *extra)
     return out;
 }
 
+static void write_crash_detail(const char *path, const char *msg, const char *detail)
+{
+    FILE *f = fopen(path, "w");
+    if (!f)
+        return;
+    fprintf(f, "%s\n\n%s\n", msg, detail ? detail : "");
+    fclose(f);
+}
+
 static void write_crash(const char *path, const char *msg)
 {
     FILE *f = fopen(path, "w");
@@ -198,8 +207,9 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     void *mono = dlopen(mono_path, RTLD_NOW | RTLD_GLOBAL);
     if (!mono)
     {
-        LOGE("dlopen %s: %s", mono_path, dlerror());
-        write_crash(crash, "Не удалось загрузить среду .NET (libmonosgen-2.0.so).");
+        const char *err = dlerror();
+        LOGE("dlopen %s: %s", mono_path, err);
+        write_crash_detail(crash, "Не удалось загрузить среду .NET (libmonosgen-2.0.so).", err);
         return 1;
     }
 
@@ -290,7 +300,7 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
     if (!asm_)
     {
         LOGE("Cannot open %s", host_dll);
-        write_crash(crash, "Не удалось загрузить Robust.Android.GameHost.dll.");
+        write_crash_detail(crash, "Не удалось загрузить Robust.Android.GameHost.dll.", host_dll);
         return 1;
     }
 

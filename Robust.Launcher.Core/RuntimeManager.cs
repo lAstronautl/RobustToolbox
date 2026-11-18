@@ -134,6 +134,14 @@ public sealed class RuntimeManager
         }
 
         File.Delete(tmp);
+
+        // Native libraries are mapped executable by the game process.
+        if (!OperatingSystem.IsWindows())
+        {
+            foreach (var so in Directory.EnumerateFiles(native, "*.so"))
+                File.SetUnixFileMode(so, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
         if (!File.Exists(Path.Combine(native, "libmonosgen-2.0.so")) || !File.Exists(Path.Combine(lib, "System.Private.CoreLib.dll")))
             throw new InvalidDataException($"Пакет среды .NET {major} неполный.");
 

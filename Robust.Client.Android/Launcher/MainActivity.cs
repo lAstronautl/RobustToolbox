@@ -40,6 +40,7 @@ public sealed class MainActivity : Activity
     {
         base.OnCreate(savedInstanceState);
         _settings = LauncherSettings.Load(FilesPath);
+        CleanupOldRuntimeLocation();
 
         var root = Ui.Column(this);
         root.SetBackgroundColor(Ui.Bg);
@@ -78,6 +79,21 @@ public sealed class MainActivity : Activity
     {
         base.OnResume();
         ShowLastCrashIfAny();
+    }
+
+    /// <summary>0.1.0 stored .NET runtimes on external storage, where native code cannot be loaded.</summary>
+    private void CleanupOldRuntimeLocation()
+    {
+        try
+        {
+            var old = System.IO.Path.Combine(CachePath, "runtimes");
+            if (CachePath != FilesPath && Directory.Exists(old))
+                Directory.Delete(old, true);
+        }
+        catch
+        {
+            // Not important.
+        }
     }
 
     private void ShowTab(Tab tab)
@@ -517,9 +533,12 @@ public sealed class MainActivity : Activity
         {
             try
             {
-                foreach (var d in new[] { "engines", "content", "runtimes" })
+                foreach (var p in new[]
+                         {
+                             System.IO.Path.Combine(CachePath, "engines"), System.IO.Path.Combine(CachePath, "content"),
+                             System.IO.Path.Combine(FilesPath, "runtimes"),
+                         })
                 {
-                    var p = System.IO.Path.Combine(CachePath, d);
                     if (Directory.Exists(p)) Directory.Delete(p, true);
                 }
 

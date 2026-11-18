@@ -95,7 +95,8 @@ public sealed class Connector
 
         // .NET runtime: the Mono runtime of the .NET version this engine build targets.
         var runtimeInfo = EngineRuntimeInfo.Read(engine.Dir);
-        var runtimeDir = await new RuntimeManager(_http, _cacheDir).EnsureRuntimeAsync(runtimeInfo.Major, progress, ct);
+        // Must be internal storage: external storage is mounted noexec, so native code there cannot be loaded.
+        var runtimeDir = await new RuntimeManager(_http, _filesDir).EnsureRuntimeAsync(runtimeInfo.Major, progress, ct);
 
         var launchDir = Path.Combine(_filesDir, "launch");
         Directory.CreateDirectory(launchDir);
