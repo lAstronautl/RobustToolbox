@@ -8,7 +8,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 OUT="${1:-$ROOT/release}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
