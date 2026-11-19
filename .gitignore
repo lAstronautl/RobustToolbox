@@ -1,0 +1,9 @@
+bin/
+obj/
+apk-out/
+release/
+Robust.Client.Android/natives/work/
+Robust.Client.Android/natives/out/
+*.user
+.vs/
+.idea/
